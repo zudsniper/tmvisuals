@@ -39,7 +39,7 @@ export interface TaskEdge {
   id: string;
   source: string;
   target: string;
-  type: 'dependency';
+  type?: 'default' | 'straight' | 'smoothstep' | 'bezier' | 'dependency';
   animated?: boolean;
   style?: React.CSSProperties;
 }
