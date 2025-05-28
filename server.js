@@ -14,7 +14,22 @@ app.use(cors());
 app.use(express.json());
 
 // Serve static files from the dist directory when built
-app.use(express.static(path.join(__dirname, 'dist')));
+const distPath = path.join(__dirname, 'dist');
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  console.log('✅ Serving built application from dist/');
+} else {
+  console.warn('⚠️  No dist/ directory found. Run "npm run build" first.');
+}
+
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    version: process.env.npm_package_version || '1.0.0',
+    timestamp: new Date().toISOString()
+  });
+});
 
 // Get directory contents
 app.get('/api/browse', async (req, res) => {
@@ -212,11 +227,23 @@ app.get('/api/drives', async (req, res) => {
   }
 });
 
-// Fallback for SPA routing
+// Fallback for SPA routing - must have dist directory
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+  const indexPath = path.join(__dirname, 'dist', 'index.html');
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.status(500).json({ 
+      error: 'Application not built. Please run "npm run build" first.',
+      hint: 'If you installed via npx, this should have been done automatically.'
+    });
+  }
 });
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`\n🚀 TaskMaster Visualizer Server`);
+  console.log(`📡 Running on: http://localhost:${PORT}`);
+  console.log(`⚡ Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`📁 Serving from: ${distPath}`);
+  console.log(`\n🔗 Open http://localhost:${PORT} in your browser\n`);
 });

@@ -28,7 +28,7 @@ const priorityColorsDark = {
   'low': 'border-gray-600'
 };
 
-export const TaskNode: React.FC<NodeProps<TaskNodeData>> = ({ data, id }) => {
+export const TaskNode: React.FC<NodeProps<TaskNodeData>> = ({ data }) => {
   const { task, isCollapsed } = data;
   const { selectTask, toggleTaskCollapse, openInEditor, layoutMode, isDarkMode } = useTaskStore();
   

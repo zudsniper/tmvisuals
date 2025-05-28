@@ -1,15 +1,49 @@
 {
   "name": "tmvisuals",
-  "private": true,
-  "version": "0.0.0",
+  "private": false,
+  "version": "1.0.0",
   "type": "module",
+  "description": "Interactive mind map visualization for Claude Task Master tasks with hierarchical dependencies, status tracking, and editor integration.",
+  "keywords": ["task-management", "visualization", "mind-map", "react", "typescript", "claude", "task-master"],
+  "author": "TaskMaster Team",
+  "license": "MIT",
+  "bin": {
+    "tmvisuals": "./bin/tmvisuals.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/tmvisuals.git"
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
+  },
+  "files": [
+    "dist/",
+    "bin/",
+    "server.js",
+    "package.json",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "DEPLOYMENT.md"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "server": "node server.js",
     "dev:server": "nodemon server.js",
-    "dev:full": "concurrently \"npm run dev\" \"npm run dev:server\""
+    "dev:full": "concurrently \"npm run dev\" \"npm run dev:server\"",
+    "start": "npm run build && npm run server",
+    "postinstall": "npm run build",
+    "prepare": "npm run build",
+    "test": "echo \"🧪 Tests coming soon!\" && exit 0",
+    "lint": "echo \"📋 Linting coming soon!\" && exit 0",
+    "clean": "rm -rf dist node_modules",
+    "reinstall": "npm run clean && npm install",
+    "pack:test": "npm pack --dry-run",
+    "prepack": "npm run build"
   },
   "dependencies": {
     "clsx": "^2.1.1",

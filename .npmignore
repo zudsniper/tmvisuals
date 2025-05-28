@@ -1,0 +1,25 @@
+# Development files
+src/
+.vscode/
+.git/
+.gitignore
+*.log
+
+# Development dependencies
+node_modules/
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+
+# Build tools config (keep essential ones)
+.eslintrc*
+.prettierrc*
+vite.config.ts
+tsconfig.json
+tsconfig.node.json
+
+# Development scripts
+scripts/prd.txt
+
+# Keep only essential files for production
+# Include: dist/, server.js, package.json, README.md, bin/
