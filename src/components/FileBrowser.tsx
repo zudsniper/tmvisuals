@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Folder, File, HardDrive, ArrowLeft, Check, X } from 'lucide-react';
+import { useTaskStore } from '../store/taskStore';
 
 interface FileItem {
   name: string;
@@ -22,6 +23,7 @@ interface FileBrowserProps {
 }
 
 export const FileBrowser: React.FC<FileBrowserProps> = ({ onSelectPath, onClose, isOpen }) => {
+  const { isDarkMode } = useTaskStore();
   const [currentPath, setCurrentPath] = useState<string>('/Users');
   const [items, setItems] = useState<FileItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -104,40 +106,71 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ onSelectPath, onClose,
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[80vh] m-4">
-        <div className="p-4 border-b border-gray-200">
+      <div className={`rounded-lg shadow-xl max-w-4xl w-full max-h-[80vh] m-4 ${
+        isDarkMode ? 'bg-gray-800' : 'bg-white'
+      }`}>
+        <div className={`p-4 border-b ${
+          isDarkMode ? 'border-gray-700' : 'border-gray-200'
+        }`}>
           <div className="flex items-center justify-between mb-2">
-            <h2 className="text-xl font-bold text-gray-800">Select Project Root Directory</h2>
+            <h2 className={`text-xl font-bold ${
+              isDarkMode ? 'text-white' : 'text-gray-800'
+            }`}>
+              Select Project Root Directory
+            </h2>
             <button
               onClick={onClose}
-              className="p-2 hover:bg-gray-100 rounded-lg"
+              className={`p-2 rounded-lg ${
+                isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
+              }`}
             >
               <X className="w-5 h-5" />
             </button>
           </div>
           
-          <p className="text-sm text-gray-600 mb-4">
-            Choose the root directory of your project. Tasks will be loaded from the <code className="bg-gray-100 px-1 rounded">tasks/</code> subdirectory.
+          <p className={`text-sm mb-4 ${
+            isDarkMode ? 'text-gray-300' : 'text-gray-600'
+          }`}>
+            Choose the root directory of your project. Tasks will be loaded from the{' '}
+            <code className={`px-1 rounded ${
+              isDarkMode ? 'bg-gray-700 text-gray-200' : 'bg-gray-100 text-gray-800'
+            }`}>
+              tasks/
+            </code>{' '}
+            subdirectory.
             <br />
-            <span className="text-xs text-gray-500">Example: Select <code>/Users/john/myproject</code> to load tasks from <code>/Users/john/myproject/tasks/</code></span>
+            <span className={`text-xs ${
+              isDarkMode ? 'text-gray-400' : 'text-gray-500'
+            }`}>
+              Example: Select <code>/Users/john/myproject</code> to load tasks from{' '}
+              <code>/Users/john/myproject/tasks/</code>
+            </span>
           </p>
           
           <div className="flex items-center gap-2 mb-4">
             <button
               onClick={goToParent}
               disabled={currentPath === '/'}
-              className="p-2 hover:bg-gray-100 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+              className={`p-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed ${
+                isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
+              }`}
             >
               <ArrowLeft className="w-4 h-4" />
             </button>
             
-            <div className="flex-1 px-3 py-2 bg-gray-100 rounded-lg text-sm font-mono">
+            <div className={`flex-1 px-3 py-2 rounded-lg text-sm font-mono ${
+              isDarkMode ? 'bg-gray-700 text-gray-200' : 'bg-gray-100 text-gray-800'
+            }`}>
               {currentPath}
             </div>
             
             <button
               onClick={handleSelectPath}
-              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 flex items-center gap-2"
+              className={`px-4 py-2 text-white rounded-lg flex items-center gap-2 ${
+                isDarkMode 
+                  ? 'bg-blue-600 hover:bg-blue-700' 
+                  : 'bg-blue-500 hover:bg-blue-600'
+              }`}
             >
               <Check className="w-4 h-4" />
               Select Project Root
@@ -147,7 +180,9 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ onSelectPath, onClose,
           {/* System Drives */}
           {drives.length > 0 && (
             <div className="flex gap-2 mb-4">
-              <span className="text-sm text-gray-600 flex items-center gap-1">
+              <span className={`text-sm flex items-center gap-1 ${
+                isDarkMode ? 'text-gray-300' : 'text-gray-600'
+              }`}>
                 <HardDrive className="w-4 h-4" />
                 Quick Access:
               </span>
@@ -155,7 +190,11 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ onSelectPath, onClose,
                 <button
                   key={drive.path}
                   onClick={() => loadDirectory(drive.path)}
-                  className="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm"
+                  className={`px-3 py-1 rounded text-sm ${
+                    isDarkMode 
+                      ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' 
+                      : 'bg-gray-100 hover:bg-gray-200 text-gray-800'
+                  }`}
                 >
                   {drive.name}
                 </button>
@@ -166,13 +205,19 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ onSelectPath, onClose,
 
         <div className="overflow-y-auto max-h-96">
           {loading && (
-            <div className="p-8 text-center text-gray-500">
+            <div className={`p-8 text-center ${
+              isDarkMode ? 'text-gray-400' : 'text-gray-500'
+            }`}>
               Loading...
             </div>
           )}
 
           {error && (
-            <div className="p-4 text-red-600 bg-red-50 m-4 rounded-lg">
+            <div className={`p-4 m-4 rounded-lg ${
+              isDarkMode 
+                ? 'text-red-400 bg-red-900 bg-opacity-50' 
+                : 'text-red-600 bg-red-50'
+            }`}>
               {error}
             </div>
           )}
@@ -180,7 +225,9 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ onSelectPath, onClose,
           {!loading && !error && (
             <div className="p-4">
               {items.length === 0 ? (
-                <div className="text-center text-gray-500 py-8">
+                <div className={`text-center py-8 ${
+                  isDarkMode ? 'text-gray-400' : 'text-gray-500'
+                }`}>
                   No accessible items in this directory
                 </div>
               ) : (
@@ -189,7 +236,11 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ onSelectPath, onClose,
                     <div
                       key={item.path}
                       onClick={() => handleItemClick(item)}
-                      className={`flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 ${
+                      className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
+                        isDarkMode 
+                          ? 'hover:bg-gray-700' 
+                          : 'hover:bg-gray-50'
+                      } ${
                         item.isDirectory ? 'cursor-pointer' : 'cursor-default opacity-60'
                       }`}
                     >
@@ -200,13 +251,21 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ onSelectPath, onClose,
                       )}
                       
                       <div className="flex-1">
-                        <div className="font-medium text-gray-800">{item.name}</div>
-                        <div className="text-sm text-gray-500">
+                        <div className={`font-medium ${
+                          isDarkMode ? 'text-white' : 'text-gray-800'
+                        }`}>
+                          {item.name}
+                        </div>
+                        <div className={`text-sm ${
+                          isDarkMode ? 'text-gray-400' : 'text-gray-500'
+                        }`}>
                           {item.isDirectory ? 'Directory' : formatFileSize(item.size || 0)}
                         </div>
                       </div>
                       
-                      <div className="text-xs text-gray-400">
+                      <div className={`text-xs ${
+                        isDarkMode ? 'text-gray-500' : 'text-gray-400'
+                      }`}>
                         {new Date(item.modified).toLocaleDateString()}
                       </div>
                     </div>

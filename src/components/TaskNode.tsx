@@ -21,9 +21,16 @@ const priorityColors = {
   'low': 'border-gray-300'
 };
 
+// Dark mode variants
+const priorityColorsDark = {
+  'high': 'border-red-400',
+  'medium': 'border-yellow-400',
+  'low': 'border-gray-600'
+};
+
 export const TaskNode: React.FC<NodeProps<TaskNodeData>> = ({ data, id }) => {
   const { task, isCollapsed } = data;
-  const { selectTask, toggleTaskCollapse, openInEditor } = useTaskStore();
+  const { selectTask, toggleTaskCollapse, openInEditor, layoutMode, isDarkMode } = useTaskStore();
   
   const handleNodeClick = () => {
     selectTask(task.id);
@@ -39,46 +46,89 @@ export const TaskNode: React.FC<NodeProps<TaskNodeData>> = ({ data, id }) => {
     openInEditor(task.id);
   };
   
+  const showHandles = layoutMode === 'graph';
+  const priorityColorMap = isDarkMode ? priorityColorsDark : priorityColors;
+  
   return (
     <div 
-      className={`bg-white rounded-lg shadow-md p-4 min-w-[250px] max-w-[350px] border-2 ${priorityColors[task.priority]} cursor-pointer hover:shadow-lg transition-shadow`}
+      className={`
+        ${isDarkMode 
+          ? 'bg-gray-800 text-white border-gray-600' 
+          : 'bg-white text-gray-800 border-gray-300'
+        } 
+        rounded-lg shadow-md p-4 min-w-[250px] max-w-[350px] border-2 
+        ${priorityColorMap[task.priority]} 
+        cursor-pointer hover:shadow-lg transition-shadow
+      `}
       onClick={handleNodeClick}
     >
-      <Handle type="target" position={Position.Left} className="!bg-gray-500" />
+      {/* Only show connection handles in graph mode */}
+      {showHandles && (
+        <Handle 
+          type="target" 
+          position={Position.Left} 
+          className={`!w-3 !h-3 ${isDarkMode ? '!bg-gray-400' : '!bg-gray-500'}`} 
+        />
+      )}
       
       <div className="flex items-start justify-between mb-2">
-        <div className="flex items-center gap-2">          {statusIcons[task.status]}
-          <span className="text-sm font-medium text-gray-500">#{task.id}</span>
+        <div className="flex items-center gap-2">
+          {statusIcons[task.status]}
+          <span className={`text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-500'}`}>
+            #{task.id}
+          </span>
         </div>
         <div className="flex items-center gap-1">
           <button
             onClick={handleOpenInEditor}
-            className="p-1 hover:bg-gray-100 rounded"
+            className={`p-1 rounded ${
+              isDarkMode 
+                ? 'hover:bg-gray-700 text-gray-400' 
+                : 'hover:bg-gray-100 text-gray-500'
+            }`}
             title="Open in editor"
           >
-            <ExternalLink className="w-4 h-4 text-gray-500" />
+            <ExternalLink className="w-4 h-4" />
           </button>
           <button
             onClick={handleCollapseToggle}
-            className="p-1 hover:bg-gray-100 rounded"
+            className={`p-1 rounded ${
+              isDarkMode 
+                ? 'hover:bg-gray-700' 
+                : 'hover:bg-gray-100'
+            }`}
           >
             {isCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
           </button>
         </div>
       </div>
       
-      <h3 className="font-semibold text-gray-800 mb-2 line-clamp-2">{task.title}</h3>
+      <h3 className={`font-semibold mb-2 line-clamp-2 ${
+        isDarkMode ? 'text-white' : 'text-gray-800'
+      }`}>
+        {task.title}
+      </h3>
       
       {!isCollapsed && (
         <>
-          <p className="text-sm text-gray-600 line-clamp-3 mb-3">{task.description}</p>
+          <p className={`text-sm line-clamp-3 mb-3 ${
+            isDarkMode ? 'text-gray-300' : 'text-gray-600'
+          }`}>
+            {task.description}
+          </p>
           
           {task.subtasks.length > 0 && (
-            <div className="mt-3 pt-3 border-t border-gray-200">
-              <p className="text-xs font-medium text-gray-500 mb-1">
+            <div className={`mt-3 pt-3 border-t ${
+              isDarkMode ? 'border-gray-600' : 'border-gray-200'
+            }`}>
+              <p className={`text-xs font-medium mb-1 ${
+                isDarkMode ? 'text-gray-400' : 'text-gray-500'
+              }`}>
                 Subtasks: {task.subtasks.filter(st => st.status === 'done').length}/{task.subtasks.length}
               </p>
-              <div className="w-full bg-gray-200 rounded-full h-2">
+              <div className={`w-full rounded-full h-2 ${
+                isDarkMode ? 'bg-gray-700' : 'bg-gray-200'
+              }`}>
                 <div 
                   className="bg-blue-500 h-2 rounded-full transition-all"
                   style={{ width: `${(task.subtasks.filter(st => st.status === 'done').length / task.subtasks.length) * 100}%` }}
@@ -88,14 +138,23 @@ export const TaskNode: React.FC<NodeProps<TaskNodeData>> = ({ data, id }) => {
           )}
           
           {task.dependencies.length > 0 && (
-            <p className="text-xs text-gray-500 mt-2">
+            <p className={`text-xs mt-2 ${
+              isDarkMode ? 'text-gray-400' : 'text-gray-500'
+            }`}>
               Dependencies: {task.dependencies.join(', ')}
             </p>
           )}
         </>
       )}
       
-      <Handle type="source" position={Position.Right} className="!bg-gray-500" />
+      {/* Only show connection handles in graph mode */}
+      {showHandles && (
+        <Handle 
+          type="source" 
+          position={Position.Right} 
+          className={`!w-3 !h-3 ${isDarkMode ? '!bg-gray-400' : '!bg-gray-500'}`} 
+        />
+      )}
     </div>
   );
 };

@@ -7,16 +7,24 @@ interface SettingsProps {
 }
 
 export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
-  const { editorPreference, setEditorPreference } = useTaskStore();
+  const { editorPreference, setEditorPreference, isDarkMode } = useTaskStore();
 
   return (
     <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl p-6 w-96">
+      <div className={`rounded-lg shadow-xl p-6 w-96 ${
+        isDarkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'
+      }`}>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold">Settings</h2>
+          <h2 className={`text-xl font-bold ${
+            isDarkMode ? 'text-white' : 'text-gray-900'
+          }`}>
+            Settings
+          </h2>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded"
+            className={`p-2 rounded ${
+              isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
+            }`}
           >
             <X className="w-5 h-5" />
           </button>
@@ -24,7 +32,9 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className={`block text-sm font-medium mb-2 ${
+              isDarkMode ? 'text-gray-300' : 'text-gray-700'
+            }`}>
               Default Editor
             </label>
             <div className="space-y-2">
@@ -37,7 +47,9 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   onChange={(e) => setEditorPreference(e.target.value as 'cursor' | 'vscode')}
                   className="mr-2"
                 />
-                <span>Cursor</span>
+                <span className={isDarkMode ? 'text-white' : 'text-gray-900'}>
+                  Cursor
+                </span>
               </label>
               <label className="flex items-center">
                 <input
@@ -48,13 +60,19 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   onChange={(e) => setEditorPreference(e.target.value as 'cursor' | 'vscode')}
                   className="mr-2"
                 />
-                <span>Visual Studio Code</span>
+                <span className={isDarkMode ? 'text-white' : 'text-gray-900'}>
+                  Visual Studio Code
+                </span>
               </label>
             </div>
           </div>
 
-          <div className="pt-4 border-t border-gray-200">
-            <p className="text-sm text-gray-600">
+          <div className={`pt-4 border-t ${
+            isDarkMode ? 'border-gray-600' : 'border-gray-200'
+          }`}>
+            <p className={`text-sm ${
+              isDarkMode ? 'text-gray-400' : 'text-gray-600'
+            }`}>
               This preference will be used when opening task files in your editor.
             </p>
           </div>
