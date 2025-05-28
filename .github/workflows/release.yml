@@ -1,0 +1,147 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [release]
+  workflow_dispatch:
+
+env:
+  DOCKER_IMAGE: zudsniper/tmvisuals
+  NPM_PACKAGE: tmvisuals
+
+jobs:
+  version-check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.extract-version.outputs.version }}
+      exists: ${{ steps.version-check.outputs.exists }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Extract version
+        id: extract-version
+        run: echo "version=$(grep -m 1 '"version"' package.json | cut -d'"' -f4)" >> $GITHUB_OUTPUT
+      
+      - name: Check if version exists on npm
+        id: version-check
+        run: |
+          response=$(curl -s https://registry.npmjs.org/tmvisuals || echo '{"versions":{}}')
+          exists=$(echo $response | jq -r --arg v "${{ steps.extract-version.outputs.version }}" 'has("versions") and .versions | has($v)' 2>/dev/null || echo 'false')
+          
+          if [ "$exists" = "true" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "::error::Version ${{ steps.extract-version.outputs.version }} already exists on npm. Please update the version in package.json"
+            exit 1
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+  test:
+    runs-on: ubuntu-latest
+    needs: version-check
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build application
+        run: npm run build
+      
+      - name: Test package creation
+        run: npm pack --dry-run
+
+  build-and-push-docker:
+    needs: [test, version-check]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      
+      - name: Set version from version-check job
+        id: version
+        run: echo "VERSION=${{ needs.version-check.outputs.version }}" >> $GITHUB_OUTPUT
+      
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ${{ env.DOCKER_IMAGE }}:latest
+            ${{ env.DOCKER_IMAGE }}:${{ steps.version.outputs.VERSION }}
+
+  publish-npm:
+    needs: [test, version-check]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build package
+        run: npm run build
+      
+      - name: Publish to npm
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  create-release:
+    needs: [publish-npm, build-and-push-docker, version-check]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set version from version-check job
+        id: version
+        run: echo "VERSION=${{ needs.version-check.outputs.version }}" >> $GITHUB_OUTPUT
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.version.outputs.VERSION }}
+          name: Release v${{ steps.version.outputs.VERSION }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ## TaskMaster Visualizer v${{ steps.version.outputs.VERSION }}
+            
+            ### Quick Start
+            ```bash
+            npx tmvisuals@${{ steps.version.outputs.VERSION }}
+            ```
+            
+            ### Docker
+            ```bash
+            docker run -p 3001:3001 ${{ env.DOCKER_IMAGE }}:${{ steps.version.outputs.VERSION }}
+            ```
+            
+            See [CHANGELOG.md](CHANGELOG.md) for detailed changes.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

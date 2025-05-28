@@ -1,18 +1,18 @@
 {
   "name": "tmvisuals",
   "private": false,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "description": "Interactive mind map visualization for Claude Task Master tasks with hierarchical dependencies, status tracking, and editor integration.",
   "keywords": ["task-management", "visualization", "mind-map", "react", "typescript", "claude", "task-master"],
-  "author": "TaskMaster Team",
+  "author": "jason mcelhenney <me@zodworks.dev>",
   "license": "MIT",
   "bin": {
     "tmvisuals": "./bin/tmvisuals.js"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/tmvisuals.git"
+    "url": "https://github.com/zudsniper/tmvisuals.git"
   },
   "engines": {
     "node": ">=16.0.0",

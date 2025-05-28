@@ -1,359 +1,165 @@
-# TaskMaster Visualizer 🎯
-
-> **Interactive mind map visualization for Claude Task Master tasks with hierarchical dependencies, status tracking, and editor integration.**
+# TaskMaster Visualizer
 
 [![npm version](https://badge.fury.io/js/tmvisuals.svg)](https://www.npmjs.com/package/tmvisuals)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## 🚀 Quick Start
+Interactive mind map visualization for [TaskMaster](https://github.com/eyaltoledano/claude-task-master) projects. Visualize task hierarchies, dependencies, and progress with an intuitive web interface.
 
-### One-Command Launch (Recommended)
+**Built for [TaskMaster](https://github.com/eyaltoledano/claude-task-master) by [@eyaltoledano](https://x.com/eyaltoledano) & [@RalphEcom](https://x.com/RalphEcom)**
+
+## Quick Start
 
 ```bash
 npx tmvisuals
 ```
 
-That's it! This will:
-1. ✅ Download and install the visualizer
-2. ✅ Build the application automatically 
-3. ✅ Start the web server
-4. ✅ Open the visualization interface at `http://localhost:3001`
+This will automatically build and start the visualizer at `http://localhost:3001`. Use the file browser to navigate to your TaskMaster project directory.
 
-### Custom Port
+## Features
 
-```bash
-npx tmvisuals --port 8080
-```
+- **Interactive Mind Maps**: ReactFlow-based visualization of task relationships
+- **Hierarchy Support**: Parent tasks with subtask progress tracking
+- **Dependency Visualization**: Animated connections showing task dependencies
+- **Status Management**: Visual indicators and status updates
+- **Editor Integration**: Open tasks directly in VSCode or Cursor
+- **Multiple Layouts**: Grid view for organization, graph view for dependencies
+- **Cross-Platform**: File browser works on Windows, macOS, and Linux
+- **Theme Support**: Light, dark, and system theme options
 
-### Help & Version
+## Requirements
 
-```bash
-npx tmvisuals --help     # Show usage information
-npx tmvisuals --version  # Show version
-```
-
-## 📋 Prerequisites
-
-- **Node.js 16+** (Download from [nodejs.org](https://nodejs.org/))
-- **TaskMaster project** with a `tasks/` directory containing:
-  - `tasks.json` file (preferred), OR
+- Node.js 16+
+- A TaskMaster project with a `tasks/` directory containing:
+  - `tasks.json` file, OR
   - Individual `task_*.txt` files
 
-## 🎯 Features
+## Installation Options
 
-### Core Visualization
-- **📊 Mind Map**: ReactFlow-based interactive task graph
-- **🏗️ Hierarchical Display**: Parent tasks with subtask progress tracking  
-- **🔗 Dependencies**: Animated edges showing task relationships
-- **📈 Status Tracking**: Visual indicators for pending/in-progress/done
-- **🎨 Priority Colors**: Visual borders for high/medium/low priority tasks
-
-### Layout Modes
-- **📐 Grid Layout**: Clean, organized grid view
-- **🌐 Graph Layout**: Timeline-based dependency flow
-- **🔄 Dynamic Switching**: Toggle between layouts instantly
-
-### Interaction & Integration
-- **📝 Editor Integration**: Open tasks in VSCode or Cursor
-- **🔍 Search & Filter**: Find tasks quickly
-- **📱 Responsive Design**: Works on desktop and mobile
-- **🌙 Dark/Light Theme**: System preference or manual toggle
-- **💾 State Persistence**: Remembers your layout and preferences
-
-### File Browser
-- **📂 Cross-Platform**: Browse directories on Windows, macOS, Linux
-- **🎯 Project Detection**: Automatically find TaskMaster projects
-- **🔒 Secure**: Built-in path traversal protection
-
-## 📁 Project Structure Requirements
-
-Your TaskMaster project should have this structure:
-
-```
-your-project/
-├── tasks/
-│   ├── tasks.json           # ← Primary format (recommended)
-│   ├── task_001.txt         # ← Alternative: individual files
-│   ├── task_002.txt
-│   └── ...
-└── other-project-files...
+### NPX (Recommended)
+```bash
+npx tmvisuals                # Latest version
+npx tmvisuals --port 8080    # Custom port
 ```
 
-### tasks.json Format
+### Global Installation
+```bash
+npm install -g tmvisuals
+tmvisuals
+```
 
+### Local Development
+```bash
+git clone https://github.com/zudsniper/tmvisuals.git
+cd tmvisuals
+npm install
+npm run dev:full
+```
+
+## TaskMaster Integration
+
+This visualizer is designed specifically for [TaskMaster](https://github.com/eyaltoledano/claude-task-master) projects. TaskMaster generates structured task files that this tool can visualize.
+
+### Supported Task Formats
+
+**tasks.json Format** (Primary):
 ```json
 {
   "tasks": [
     {
       "id": 1,
-      "title": "Setup Project Structure",
-      "description": "Create the basic project layout...",
-      "details": "Implementation details...",
-      "testStrategy": "Testing approach...",
+      "title": "Task Title",
+      "description": "Task description",
+      "status": "pending",
       "priority": "high",
-      "status": "done",
-      "dependencies": [],
-      "subtasks": [
-        {
-          "id": "1.1",
-          "title": "Create directories",
-          "description": "...",
-          "status": "done"
-        }
-      ]
+      "dependencies": [2, 3],
+      "subtasks": [...]
     }
   ]
 }
 ```
 
-## 🛠️ Installation Methods
+**Individual Files**: `task_001.txt`, `task_002.txt`, etc.
 
-### Method 1: NPX (Recommended)
-```bash
-# Run directly without installation
-npx tmvisuals
+## Usage
 
-# Always get latest version
-npx tmvisuals@latest
-```
+1. **Start the visualizer**: `npx tmvisuals`
+2. **Navigate to your project**: Use the file browser to find your TaskMaster project
+3. **Load tasks**: Click "Load Tasks" when you reach the project directory
+4. **Interact**: Click nodes for details, drag to reposition, update status
 
-### Method 2: Global Installation
-```bash
-# Install globally
-npm install -g tmvisuals
+### Layout Modes
 
-# Run from anywhere
-tmvisuals
-```
+- **Grid Layout**: Organized grid view, ideal for task lists
+- **Graph Layout**: Timeline-based dependency flow, shows relationships
 
-### Method 3: Local Development
-```bash
-# Clone repository
-git clone https://github.com/yourusername/tmvisuals.git
-cd tmvisuals
+### Status Management
 
-# Install dependencies
-npm install
+Update task status directly in the interface:
+- Pending (gray)
+- In Progress (blue) 
+- Done (green)
 
-# Development mode (hot reload)
-npm run dev:full
-
-# Production build + serve
-npm start
-```
-
-## 🎮 Usage Guide
-
-### 1. **Launch the Visualizer**
-```bash
-npx tmvisuals
-```
-
-### 2. **Navigate to Your Project**
-- Use the built-in file browser
-- Navigate to your TaskMaster project directory
-- Look for the folder containing your `tasks/` directory
-
-### 3. **Load Your Tasks**
-- Click "Load Tasks" when you find your project
-- The visualizer will automatically detect and parse your tasks
-- Switch between Grid and Graph layouts as needed
-
-### 4. **Interact with Tasks**
-- **Click** any task node to view details
-- **Drag** nodes to reposition them
-- **Update status** in the details panel
-- **Open in editor** using the external link icon
-
-### 5. **Customize Your View**
-- Toggle between light/dark themes
-- Switch layout modes (Grid vs Graph)
-- Use search to filter tasks
-- Adjust editor preference (VSCode/Cursor)
-
-## ⚙️ Configuration
-
-### Environment Variables
+## Command Line Options
 
 ```bash
-PORT=3001                    # Server port (default: 3001)
-NODE_ENV=production         # Environment mode
+tmvisuals --help          # Show help
+tmvisuals --version       # Show version
+tmvisuals --port 3002     # Custom port
 ```
 
-### Command Line Options
+## Configuration
 
+The visualizer remembers your preferences:
+- Selected layout mode
+- Theme preference
+- Editor choice (VSCode/Cursor)
+- Custom node positions
+
+## API Endpoints
+
+- `GET /api/health` - Health check
+- `GET /api/browse?dir=path` - Browse directories
+- `GET /api/tasks?projectPath=path` - Load TaskMaster tasks
+- `GET /api/drives` - Get system drives
+
+## Development
+
+### Local Development
 ```bash
-tmvisuals --port 8080       # Custom port
-tmvisuals --help            # Show help
-tmvisuals --version         # Show version
+npm run dev:full     # Start both frontend and backend
+npm run dev          # Frontend only (port 5173)
+npm run dev:server   # Backend only (port 3001)
 ```
 
-## 🔧 Advanced Usage
-
-### Custom Build
-
+### Building
 ```bash
-# Clone and modify
-git clone https://github.com/yourusername/tmvisuals.git
-cd tmvisuals
-
-# Install dependencies  
-npm install
-
-# Build for production
-npm run build
-
-# Start production server
-npm run server
+npm run build        # Build for production
+npm run preview      # Preview production build
 ```
 
-### Development Mode
+## Technology Stack
 
-```bash
-# Run with hot reload
-npm run dev:full
+- **Frontend**: React 18, TypeScript, Tailwind CSS
+- **Visualization**: ReactFlow 11
+- **State Management**: Zustand
+- **Backend**: Express.js, Node.js
+- **Build**: Vite
 
-# Frontend only (port 5173)
-npm run dev
+## Contributing
 
-# Backend only (port 3001) 
-npm run dev:server
-```
+Contributions welcome! This project visualizes TaskMaster data - for the core task management system, see [TaskMaster](https://github.com/eyaltoledano/claude-task-master).
 
-## 🌐 API Endpoints
+## Credits
 
-The visualizer provides these API endpoints:
+- **TaskMaster**: [@eyaltoledano](https://x.com/eyaltoledano) & [@RalphEcom](https://x.com/RalphEcom) - [Repository](https://github.com/eyaltoledano/claude-task-master)
+- **Visualizer**: [@zudsniper](https://github.com/zudsniper) - [Repository](https://github.com/zudsniper/tmvisuals)
 
-```
-GET  /api/health            # Health check
-GET  /api/browse?dir=path   # Browse directories  
-GET  /api/tasks?projectPath # Load tasks from project
-GET  /api/drives            # Get system drives
-```
-
-## 🔒 Security Features
-
-- **Path Traversal Protection**: Prevents access outside allowed directories
-- **Input Sanitization**: All user inputs are validated
-- **CORS Enabled**: Secure cross-origin requests
-- **No External Dependencies**: Self-contained application
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-**"Application not built" error:**
-```bash
-npm run build  # Rebuild the application
-```
-
-**Port already in use:**
-```bash
-npx tmvisuals --port 8080  # Use different port
-```
-
-**Tasks not loading:**
-- Ensure your project has a `tasks/` directory
-- Check that `tasks.json` exists and is valid JSON
-- Verify file permissions
-
-**Editor integration not working:**
-- Install VSCode or Cursor
-- Check that the editor is in your system PATH
-- Update editor preference in Settings
-
-### Debug Mode
-
-```bash
-DEBUG=1 npx tmvisuals  # Enable debug logging
-```
-
-### Clear Cache
-
-```bash
-# Clear npm cache
-npm cache clean --force
-
-# Reinstall
-npx tmvisuals@latest
-```
-
-## 📦 Package Contents
-
-When installed via npm, the package includes:
-
-```
-tmvisuals/
-├── bin/tmvisuals.js        # Executable entry point
-├── dist/                   # Built web application
-├── server.js               # Express server
-├── package.json            # Package metadata
-└── README.md              # This documentation
-```
-
-## 🚀 Deployment Options
-
-### 1. Local Development Server
-```bash
-npx tmvisuals  # Perfect for local use
-```
-
-### 2. Production Server
-```bash
-# Build and serve
-npm run build
-NODE_ENV=production npm run server
-```
-
-### 3. Docker Deployment
-```dockerfile
-FROM node:18-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
-COPY . .
-RUN npm run build
-EXPOSE 3001
-CMD ["npm", "start"]
-```
-
-### 4. Cloud Deployment
-- **Heroku**: `git push heroku main`
-- **Vercel**: Connect GitHub repository
-- **Railway**: Deploy from GitHub
-- **DigitalOcean**: Use App Platform
-
-## 🔄 Updates
-
-```bash
-# Get latest version
-npx tmvisuals@latest
-
-# Check current version
-npx tmvisuals --version
-```
-
-## 🤝 Contributing
-
-```bash
-# Development setup
-git clone https://github.com/yourusername/tmvisuals.git
-cd tmvisuals
-npm install
-npm run dev:full
-```
-
-## 📄 License
+## License
 
 MIT License - see [LICENSE](LICENSE) for details.
 
-## 🔗 Links
+## Links
 
-- **GitHub**: https://github.com/yourusername/tmvisuals
-- **NPM**: https://www.npmjs.com/package/tmvisuals  
-- **Issues**: https://github.com/yourusername/tmvisuals/issues
-- **TaskMaster**: https://github.com/taskmaster-ai/taskmaster
-
----
-
-**Made with ❤️ for the TaskMaster community**
+- **TaskMaster**: https://github.com/eyaltoledano/claude-task-master
+- **Visualizer**: https://github.com/zudsniper/tmvisuals
+- **NPM Package**: https://www.npmjs.com/package/tmvisuals
