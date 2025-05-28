@@ -26,6 +26,11 @@ This will automatically build and start the visualizer at `http://localhost:3001
 - **Cross-Platform**: File browser works on Windows, macOS, and Linux
 - **Theme Support**: Light, dark, and system theme options
 
+## Screenshots
+![front page of app](image.png)
+![dark mode graph view](image-1.png)
+![graph view showing moved tasks & the task sidebar](image-2.png)
+
 ## Requirements
 
 - Node.js 16+
