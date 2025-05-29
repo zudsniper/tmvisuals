@@ -1,7 +1,7 @@
 {
   "name": "tmvisuals",
   "private": false,
-  "version": "1.2.3",
+  "version": "1.2.4",
   "type": "module",
   "description": "Interactive mind map visualization for Claude Task Master tasks with hierarchical dependencies, status tracking, and editor integration.",
   "keywords": [

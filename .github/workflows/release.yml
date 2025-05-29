@@ -5,6 +5,10 @@ on:
     branches: [release]
   workflow_dispatch:
 
+permissions:
+  contents: write
+  packages: write
+
 env:
   DOCKER_IMAGE: zudsniper/tmvisuals
   NPM_PACKAGE: tmvisuals
