@@ -1,0 +1,137 @@
+{
+  "tasks": [
+    {
+      "id": 1,
+      "title": "Setup Project Structure",
+      "description": "Initialize the basic project structure and configuration files",
+      "details": "Create the main directories, configure build tools, and set up the development environment",
+      "testStrategy": "Manual verification of file structure and build process",
+      "priority": "high",
+      "dependencies": [],
+      "status": "done",
+      "subtasks": [
+        {
+          "id": "1.1",
+          "title": "Create directory structure",
+          "description": "Set up src, components, and utils directories",
+          "status": "done"
+        },
+        {
+          "id": "1.2",
+          "title": "Configure build tools",
+          "description": "Set up Vite and TypeScript configuration",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Implement TaskNode Component",
+      "description": "Create the visual representation of tasks in the mind map",
+      "details": "Build a React component that displays task information with proper styling and interactivity",
+      "testStrategy": "Unit tests for component rendering and interaction",
+      "priority": "high",
+      "dependencies": [1],
+      "status": "in-progress",
+      "subtasks": [
+        {
+          "id": "2.1",
+          "title": "Basic component structure",
+          "description": "Create the base TaskNode component",
+          "status": "done"
+        },
+        {
+          "id": "2.2",
+          "title": "Add styling and icons",
+          "description": "Style the component and add status icons",
+          "status": "done"
+        },
+        {
+          "id": "2.3",
+          "title": "Add animations",
+          "description": "Implement smooth animations for progress bars",
+          "status": "in-progress",
+          "lastUpdated": "2024-12-20T10:30:00Z"
+        },
+        {
+          "id": "2.4",
+          "title": "Add interactions",
+          "description": "Handle click events and state changes",
+          "status": "pending"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Create Task Store",
+      "description": "Implement state management for tasks using Zustand",
+      "details": "Set up centralized state management for task data, selection, and operations",
+      "testStrategy": "Unit tests for store actions and state updates",
+      "priority": "medium",
+      "dependencies": [1],
+      "status": "pending",
+      "subtasks": []
+    },
+    {
+      "id": 4,
+      "title": "Implement Layout Algorithms",
+      "description": "Create grid and graph layout algorithms for task positioning",
+      "details": "Develop algorithms to position tasks in both grid and dependency graph layouts",
+      "testStrategy": "Visual testing and algorithm unit tests",
+      "priority": "medium",
+      "dependencies": [2, 3],
+      "status": "pending",
+      "subtasks": []
+    },
+    {
+      "id": 5,
+      "title": "Add Task Details Panel",
+      "description": "Create a side panel to show detailed task information",
+      "details": "Build a detailed view panel that shows task description, dependencies, and allows editing",
+      "testStrategy": "Integration tests for panel functionality",
+      "priority": "low",
+      "dependencies": [2, 3],
+      "status": "pending",
+      "subtasks": []
+    },
+    {
+      "id": 6,
+      "title": "Live Updates Feature",
+      "description": "Implement real-time updates using Server-Sent Events",
+      "details": "Add live file watching and smooth animations for real-time updates",
+      "testStrategy": "Manual testing with file modifications",
+      "priority": "high",
+      "dependencies": [2, 3],
+      "status": "in-progress",
+      "lastUpdated": "2024-12-20T10:42:00Z",
+      "subtasks": [
+        {
+          "id": "6.1",
+          "title": "Add file watching server",
+          "description": "Implement chokidar file watcher on backend",
+          "status": "done"
+        },
+        {
+          "id": "6.2",
+          "title": "Add SSE endpoint",
+          "description": "Create Server-Sent Events endpoint for live updates",
+          "status": "done"
+        },
+        {
+          "id": "6.3",
+          "title": "Add frontend SSE client",
+          "description": "Connect frontend to SSE for live updates",
+          "status": "in-progress",
+          "lastUpdated": "2024-12-20T10:35:00Z"
+        },
+        {
+          "id": "6.4",
+          "title": "Add smooth animations",
+          "description": "Implement smooth progress bar animations",
+          "status": "in-progress",
+          "lastUpdated": "2024-12-20T10:40:00Z"
+        }
+      ]
+    }
+  ]
+}

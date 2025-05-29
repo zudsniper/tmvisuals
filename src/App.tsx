@@ -54,7 +54,9 @@ function Flow() {
     isLiveUpdateEnabled,
     lastUpdateTime,
     enableLiveUpdates,
-    disableLiveUpdates
+    disableLiveUpdates,
+    // Auto-focus setting
+    focusOnActiveTask
   } = useTaskStore();
   const [flowNodes, setNodes, onNodesChange] = useNodesState(nodes);
   const [flowEdges, setEdges, onEdgesChange] = useEdgesState(edges);
@@ -62,6 +64,22 @@ function Flow() {
   const [showFileBrowser, setShowFileBrowser] = useState(false);
   const [isEditingProjectName, setIsEditingProjectName] = useState(false);
   const [editingProjectName, setEditingProjectName] = useState('');
+
+  // Enhanced visual highlighting for active tasks - NO viewport manipulation
+  useEffect(() => {
+    if (!focusOnActiveTask || flowNodes.length === 0) return;
+
+    // Find all active tasks for enhanced visual highlighting
+    const activeTasks = flowNodes.filter(node => {
+      const task = node.data.task;
+      return task.status === 'in-progress' || 
+             task.subtasks.some(subtask => subtask.status === 'in-progress');
+    });
+
+    // The visual highlighting is handled entirely in TaskNode.tsx
+    // This effect just ensures the setting is properly connected
+    console.log(`Enhanced highlighting enabled for ${activeTasks.length} active tasks`);
+  }, [flowNodes, focusOnActiveTask]);
 
   // Auto-load tasks from saved project path on startup
   useEffect(() => {

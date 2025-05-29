@@ -23,6 +23,9 @@ interface TaskStore {
   customPositions: Map<string, { x: number; y: number }>;
   lastViewport: Viewport | null;
   projectName: string | null;
+  focusOnActiveTask: boolean; // New setting to focus on active task instead of remembering viewport
+  dynamicLayout: boolean; // New setting for dynamic layout based on active task changes
+  currentActiveTaskId: number | null; // Track current active task for dynamic layout
   
   // Live updates
   isLiveUpdateEnabled: boolean;
@@ -46,33 +49,41 @@ interface TaskStore {
   updateNodePosition: (nodeId: string, position: { x: number; y: number }) => void;
   setLastViewport: (viewport: Viewport) => void;
   setProjectName: (name: string | null) => void;
+  setFocusOnActiveTask: (focus: boolean) => void;
+  setDynamicLayout: (dynamic: boolean) => void;
   
   // Live update actions
   enableLiveUpdates: () => void;
   disableLiveUpdates: () => void;
   startWatchingProject: (projectPath: string) => Promise<void>;
   stopWatchingProject: (projectPath: string) => Promise<void>;
+  
+  // Storage management
+  clearAllStoredData: () => void;
 }
 
-// Grid layout: simple ordered grid without overlaps, extends downward
+// Enhanced grid layout with intelligent height-aware positioning
 function calculateGridLayout(tasks: Task[], customPositions: Map<string, { x: number; y: number }>): TaskNode[] {
   const nodes: TaskNode[] = [];
   
-  // Node dimensions with EXTREMELY generous padding to prevent any overlaps
+  // Node dimensions with much better spacing
   const NODE_WIDTH = 300;
-  const NODE_HEIGHT = 220;
-  const HORIZONTAL_GUTTER = 75; 
-  const VERTICAL_GUTTER = 75;     
-  const MARGIN = 25;            // Much larger margin from edges
+  const BASE_NODE_HEIGHT = 180; // Base height for tasks without subtasks
+  const HORIZONTAL_GUTTER = 120; // Increased from 50 for much more space
+  const VERTICAL_GUTTER = 80;    // Increased from 40 for much more space  
+  const MARGIN = 40;             // Increased from 25
   
   // Get viewport width and calculate available space
   const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1200;
-  const availableWidth = viewportWidth - (2 * MARGIN); // Leave margin on both sides
+  const availableWidth = viewportWidth - (2 * MARGIN);
   
-  // Calculate how many columns can fit with proper gutters
+  // Calculate how many columns can fit
   const columnsPerRow = Math.max(1, Math.floor((availableWidth + HORIZONTAL_GUTTER) / (NODE_WIDTH + HORIZONTAL_GUTTER)));
   
-  tasks.forEach((task, index) => {
+  // Track the height of each column to enable intelligent positioning
+  const columnHeights = new Array(columnsPerRow).fill(0);
+  
+  tasks.forEach((task) => {
     const nodeId = `task-${task.id}`;
     
     // Check if this node has a custom position
@@ -90,12 +101,20 @@ function calculateGridLayout(tasks: Task[], customPositions: Map<string, { x: nu
       return;
     }
     
-    const row = Math.floor(index / columnsPerRow);
-    const col = index % columnsPerRow;
+    // Calculate estimated task height based on content
+    const estimatedHeight = BASE_NODE_HEIGHT + 
+      (task.subtasks.length * 25) + // ~25px per subtask
+      (task.description.length > 100 ? 20 : 0) + // Extra height for long descriptions
+      (task.dependencies.length > 0 ? 15 : 0); // Extra height for dependencies
     
-    // Simple grid positioning - no centering, just consistent spacing, allowing overflow
-    const x = MARGIN + col * (NODE_WIDTH + HORIZONTAL_GUTTER);
-    const y = MARGIN + 100 + row * (NODE_HEIGHT + VERTICAL_GUTTER); // Add 100px for top nav bar
+    // Find the column with the shortest current height (intelligent filling)
+    const targetColumn = columnHeights.indexOf(Math.min(...columnHeights));
+    
+    const x = MARGIN + targetColumn * (NODE_WIDTH + HORIZONTAL_GUTTER);
+    const y = MARGIN + 100 + columnHeights[targetColumn]; // Add 100px for top nav bar
+    
+    // Update the column height for the next task
+    columnHeights[targetColumn] += estimatedHeight + VERTICAL_GUTTER;
     
     nodes.push({
       id: nodeId,
@@ -111,50 +130,51 @@ function calculateGridLayout(tasks: Task[], customPositions: Map<string, { x: nu
   return nodes;
 }
 
-// Enhanced timeline-style graph layout with intelligent clustering and improved density management
-function calculateGraphLayout(tasks: Task[], customPositions: Map<string, { x: number; y: number }>): TaskNode[] {
+// Enhanced graph layout with dynamic active task positioning
+function calculateGraphLayout(tasks: Task[], customPositions: Map<string, { x: number; y: number }>, dynamicLayout: boolean = false, activeTaskId: number | null = null): TaskNode[] {
   const nodes: TaskNode[] = [];
   const levelMap = new Map<number, number>();
-  const visiting = new Set<number>(); // Track nodes currently being visited to detect cycles
+  const visiting = new Set<number>();
   
-  // Layout dimensions - optimized for better visibility
+  // Layout dimensions - optimized for better space utilization
   const NODE_WIDTH = 280;
-  const NODE_HEIGHT = 120;
-  const HORIZONTAL_SPACING = 200; // Reduced for better density
-  const VERTICAL_SPACING = 80;    // Reduced for better density
-  const MARGIN = 80;
-  const TIMELINE_START_X = MARGIN;
+  const HORIZONTAL_SPACING = 100; // Reduced from 150 for better space usage
+  const VERTICAL_SPACING = 160;   // Consistent vertical spacing for all tasks
+  const MARGIN = 60;              // Reduced margin for more space
+  const TOP_MARGIN = 120;         // Space for navigation
   
   // Get viewport dimensions
   const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1400;
-  const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
   const availableWidth = viewportWidth - (2 * MARGIN);
-  const availableHeight = viewportHeight - (2 * MARGIN + 150); // Account for top nav
   
-  // Calculate max columns that can fit horizontally
-  const maxColumns = Math.floor(availableWidth / (NODE_WIDTH + HORIZONTAL_SPACING));
+  // Calculate max columns - less conservative for better utilization
+  const maxColumns = Math.max(3, Math.floor(availableWidth / (NODE_WIDTH + HORIZONTAL_SPACING)));
   
-  // First pass: determine timeline levels (time columns) based on dependencies
+  // Find current active task for dynamic layout
+  const currentActiveTask = dynamicLayout && activeTaskId ? 
+    tasks.find(t => t.id === activeTaskId && (t.status === 'in-progress' || t.subtasks.some(st => st.status === 'in-progress'))) :
+    tasks.find(t => t.status === 'in-progress' || t.subtasks.some(st => st.status === 'in-progress'));
+  
+  // Simple dependency level calculation
   const calculateLevel = (taskId: number): number => {
     if (levelMap.has(taskId)) return levelMap.get(taskId)!;
     
-    // Cycle detection: if we're already visiting this node, there's a cycle
     if (visiting.has(taskId)) {
       console.warn(`Circular dependency detected involving task ${taskId}`);
-      return 0; // Assign level 0 for circular dependencies
+      return 0;
     }
     
     const task = tasks.find(t => t.id === taskId);
     if (!task) return 0;
     
-    visiting.add(taskId); // Mark as currently being visited
+    visiting.add(taskId);
     
     let maxDepLevel = -1;
     for (const depId of task.dependencies) {
       maxDepLevel = Math.max(maxDepLevel, calculateLevel(depId));
     }
     
-    visiting.delete(taskId); // Remove from visiting set
+    visiting.delete(taskId);
     
     const level = maxDepLevel + 1;
     levelMap.set(taskId, level);
@@ -164,110 +184,135 @@ function calculateGraphLayout(tasks: Task[], customPositions: Map<string, { x: n
   // Calculate all levels
   tasks.forEach(task => calculateLevel(task.id));
   
-  // Group tasks by timeline level (time columns)
-  const timelineColumns = new Map<number, Task[]>();
-  tasks.forEach(task => {
-    const level = levelMap.get(task.id) || 0;
-    if (!timelineColumns.has(level)) {
-      timelineColumns.set(level, []);
-    }
-    timelineColumns.get(level)!.push(task);
-  });
+  // Group tasks by level with dynamic active task prioritization
+  const columns = new Map<number, Task[]>();
   
-  // Handle layout wrapping if we have too many columns
-  const maxLevel = Math.max(...Array.from(timelineColumns.keys()));
-  const needsWrapping = maxLevel >= maxColumns;
+  // If dynamic layout is enabled and we have an active task, reorganize around it
+  if (dynamicLayout && currentActiveTask) {
+    // Place active task in center column (column 1 if 3+ columns available)
+    const centerColumn = Math.floor(maxColumns / 2);
+    const activeTaskLevel = levelMap.get(currentActiveTask.id) || 0;
+    
+    // Adjust all tasks relative to active task's position
+    tasks.forEach(task => {
+      let adjustedLevel = levelMap.get(task.id) || 0;
+      
+      // Center active task's column
+      if (task.id === currentActiveTask.id) {
+        adjustedLevel = centerColumn;
+      } else {
+        // Shift other tasks relative to the active task
+        const originalLevel = levelMap.get(task.id) || 0;
+        const relativeToActive = originalLevel - activeTaskLevel;
+        adjustedLevel = centerColumn + relativeToActive;
+        
+        // Ensure we don't go below 0
+        adjustedLevel = Math.max(0, adjustedLevel);
+      }
+      
+      if (!columns.has(adjustedLevel)) {
+        columns.set(adjustedLevel, []);
+      }
+      columns.get(adjustedLevel)!.push(task);
+    });
+  } else {
+    // Standard layout without dynamic positioning
+    tasks.forEach(task => {
+      const level = levelMap.get(task.id) || 0;
+      if (!columns.has(level)) {
+        columns.set(level, []);
+      }
+      columns.get(level)!.push(task);
+    });
+  }
   
-  // Enhanced positioning with intelligent clustering and wrapping
-  for (const [timeColumn, tasksInColumn] of timelineColumns) {
-    const tasksCount = tasksInColumn.length;
+  // Simple positioning with guaranteed spacing
+  for (const [column, tasksInColumn] of Array.from(columns.entries()).sort(([a], [b]) => a - b)) {
+    // Calculate column position with wrapping
+    const effectiveColumn = column % maxColumns;
+    const wrapRow = Math.floor(column / maxColumns);
     
-    // Calculate wrapped position if needed
-    let effectiveColumn = timeColumn;
-    let rowOffset = 0;
-    
-    if (needsWrapping) {
-      effectiveColumn = timeColumn % maxColumns;
-      rowOffset = Math.floor(timeColumn / maxColumns);
-    }
-    
-    // Sort tasks by priority and dependency count for better visual hierarchy
+    // Sort tasks for consistent ordering with active task priority
     tasksInColumn.sort((a, b) => {
-      // First by priority (high priority at top)
+      // If dynamic layout is enabled, prioritize active task and its dependencies
+      if (dynamicLayout && currentActiveTask) {
+        const aIsActive = a.id === currentActiveTask.id;
+        const bIsActive = b.id === currentActiveTask.id;
+        const aIsDepOfActive = currentActiveTask.dependencies.includes(a.id);
+        const bIsDepOfActive = currentActiveTask.dependencies.includes(b.id);
+        const aHasActiveDep = a.dependencies.includes(currentActiveTask.id);
+        const bHasActiveDep = b.dependencies.includes(currentActiveTask.id);
+        
+        // Active task goes first
+        if (aIsActive && !bIsActive) return -1;
+        if (bIsActive && !aIsActive) return 1;
+        
+        // Dependencies of active task come next
+        if (aIsDepOfActive && !bIsDepOfActive) return -1;
+        if (bIsDepOfActive && !aIsDepOfActive) return 1;
+        
+        // Tasks that depend on active task come after
+        if (aHasActiveDep && !bHasActiveDep) return -1;
+        if (bHasActiveDep && !aHasActiveDep) return 1;
+      }
+      
+      // Standard priority ordering
       const priorityOrder = { 'high': 3, 'medium': 2, 'low': 1 };
-      const aPriority = priorityOrder[a.priority];
-      const bPriority = priorityOrder[b.priority];
+      const statusOrder = { 'in-progress': 3, 'pending': 2, 'done': 1 };
+      
+      const aPriority = priorityOrder[a.priority] || 1;
+      const bPriority = priorityOrder[b.priority] || 1;
       if (aPriority !== bPriority) return bPriority - aPriority;
       
-      // Then by status (in-progress first, then pending, then done)
-      const statusOrder = { 'in-progress': 3, 'pending': 2, 'done': 1 };
-      const aStatus = statusOrder[a.status];
-      const bStatus = statusOrder[b.status];
+      const aStatus = statusOrder[a.status] || 1;
+      const bStatus = statusOrder[b.status] || 1;
       if (aStatus !== bStatus) return bStatus - aStatus;
-      
-      // Finally by dependency count for visual flow
-      const aDeps = a.dependencies.length;
-      const bDeps = b.dependencies.length;
-      if (aDeps !== bDeps) return bDeps - aDeps;
       
       return a.id - b.id;
     });
     
-    tasksInColumn.forEach((task, index) => {
+    tasksInColumn.forEach((task, taskIndex) => {
       const nodeId = `task-${task.id}`;
       
-      // Check if this node has a custom position
+      // Check for custom position first
       const customPos = customPositions.get(nodeId);
       if (customPos) {
         nodes.push({
           id: nodeId,
           type: 'task',
           position: customPos,
-          data: {
-            task,
-            isCollapsed: false
-          }
+          data: { task, isCollapsed: false }
         });
         return;
       }
       
-      // Calculate base position
-      const baseX = TIMELINE_START_X + effectiveColumn * (NODE_WIDTH + HORIZONTAL_SPACING);
-      const baseY = MARGIN + 120; // Account for top navigation
+      // Calculate Y position with consistent, clean spacing
+      const baseY = TOP_MARGIN + (wrapRow * 600); // Larger row separation
+      const taskY = baseY + (taskIndex * VERTICAL_SPACING);
       
-      // Add row offset for wrapped layouts
-      const wrappedYOffset = rowOffset * (availableHeight / 2);
+      let x = MARGIN + effectiveColumn * (NODE_WIDTH + HORIZONTAL_SPACING);
+      const y = taskY;
       
-      // Calculate vertical positioning with improved clustering
-      let y: number;
+      // OVERLAP OFFSET: If cards would overlap or be too close, offset to the left
+      // Check if there are other nodes that might overlap with this position
+      const potentialOverlaps = nodes.filter(node => {
+        if (!node.position) return false;
+        const xDiff = Math.abs(node.position.x - x);
+        const yDiff = Math.abs(node.position.y - y);
+        // Consider it an overlap if within 50px horizontally and 100px vertically
+        return xDiff < 50 && yDiff < 100;
+      });
       
-      if (tasksCount === 1) {
-        // Single task: center it in available space
-        y = baseY + wrappedYOffset + (availableHeight / 4) - NODE_HEIGHT / 2;
-      } else {
-        // Multiple tasks: use adaptive spacing based on available height
-        const effectiveHeight = availableHeight / 2; // Use half height per "row"
-        const totalNeededHeight = tasksCount * NODE_HEIGHT + (tasksCount - 1) * VERTICAL_SPACING;
-        
-        if (totalNeededHeight <= effectiveHeight) {
-          // Tasks fit comfortably: center the group
-          const startY = baseY + wrappedYOffset + (effectiveHeight - totalNeededHeight) / 2;
-          y = startY + index * (NODE_HEIGHT + VERTICAL_SPACING);
-        } else {
-          // Tasks need compression: use adaptive spacing
-          const adaptiveSpacing = Math.max(40, (effectiveHeight - tasksCount * NODE_HEIGHT) / Math.max(1, tasksCount - 1));
-          y = baseY + wrappedYOffset + index * (NODE_HEIGHT + adaptiveSpacing);
-        }
+      // If there are potential overlaps, offset this card to the left
+      if (potentialOverlaps.length > 0) {
+        x -= 30 * (taskIndex + 1); // Progressive offset based on task index
       }
       
       nodes.push({
         id: nodeId,
         type: 'task',
-        position: { x: baseX, y },
-        data: {
-          task,
-          isCollapsed: false
-        }
+        position: { x, y },
+        data: { task, isCollapsed: false }
       });
     });
   }
@@ -276,12 +321,12 @@ function calculateGraphLayout(tasks: Task[], customPositions: Map<string, { x: n
 }
 
 // Calculate positions based on layout mode
-function calculateNodePositions(tasks: Task[], layoutMode: LayoutMode, customPositions: Map<string, { x: number; y: number }>): TaskNode[] {
+function calculateNodePositions(tasks: Task[], layoutMode: LayoutMode, customPositions: Map<string, { x: number; y: number }>, dynamicLayout: boolean = false, activeTaskId: number | null = null): TaskNode[] {
   switch (layoutMode) {
     case 'grid':
       return calculateGridLayout(tasks, customPositions);
     case 'graph':
-      return calculateGraphLayout(tasks, customPositions);
+      return calculateGraphLayout(tasks, customPositions, dynamicLayout, activeTaskId);
     default:
       return calculateGridLayout(tasks, customPositions);
   }
@@ -293,6 +338,8 @@ const THEME_STORAGE_KEY = 'taskmaster-theme';
 const POSITIONS_STORAGE_KEY = 'taskmaster-positions';
 const VIEWPORT_STORAGE_KEY = 'taskmaster-viewport';
 const PROJECT_NAME_STORAGE_KEY = 'taskmaster-project-name';
+const FOCUS_ON_ACTIVE_TASK_KEY = 'taskmaster-focus-on-active-task';
+const DYNAMIC_LAYOUT_STORAGE_KEY = 'taskmaster-dynamic-layout';
 
 // Dark mode detection
 const getSystemTheme = (): 'light' | 'dark' => {
@@ -356,6 +403,28 @@ const loadProjectNameFromStorage = (): string | null => {
   }
 };
 
+const loadFocusOnActiveTaskFromStorage = (): boolean => {
+  if (typeof window === 'undefined') return true; // Default to true
+  try {
+    const stored = localStorage.getItem(FOCUS_ON_ACTIVE_TASK_KEY);
+    return stored !== null ? JSON.parse(stored) : true; // Default to true
+  } catch (error) {
+    console.warn('Failed to load focus on active task setting from localStorage:', error);
+    return true;
+  }
+};
+
+const loadDynamicLayoutFromStorage = (): boolean => {
+  if (typeof window === 'undefined') return false; // Default to false for stability
+  try {
+    const stored = localStorage.getItem(DYNAMIC_LAYOUT_STORAGE_KEY);
+    return stored !== null ? JSON.parse(stored) : false; // Default to false
+  } catch (error) {
+    console.warn('Failed to load dynamic layout setting from localStorage:', error);
+    return false;
+  }
+};
+
 const saveProjectPathToStorage = (path: string | null): void => {
   if (typeof window === 'undefined') return;
   try {
@@ -407,6 +476,24 @@ const saveProjectNameToStorage = (name: string | null): void => {
     }
   } catch (error) {
     console.warn('Failed to save project name to localStorage:', error);
+  }
+};
+
+const saveFocusOnActiveTaskToStorage = (focus: boolean): void => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(FOCUS_ON_ACTIVE_TASK_KEY, JSON.stringify(focus));
+  } catch (error) {
+    console.warn('Failed to save focus on active task setting to localStorage:', error);
+  }
+};
+
+const saveDynamicLayoutToStorage = (dynamic: boolean): void => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(DYNAMIC_LAYOUT_STORAGE_KEY, JSON.stringify(dynamic));
+  } catch (error) {
+    console.warn('Failed to save dynamic layout setting to localStorage:', error);
   }
 };
 
@@ -537,6 +624,9 @@ export const useTaskStore = create<TaskStore>((set, get) => {
     customPositions: loadCustomPositions(),
     lastViewport: loadLastViewport(),
     projectName: loadProjectNameFromStorage(),
+    focusOnActiveTask: loadFocusOnActiveTaskFromStorage(),
+    dynamicLayout: loadDynamicLayoutFromStorage(), // Load from storage instead of defaulting to false
+    currentActiveTaskId: null,
     
     // Live updates
     isLiveUpdateEnabled: false,
@@ -546,12 +636,19 @@ export const useTaskStore = create<TaskStore>((set, get) => {
     loadTasks: (tasks) => {
       console.log('loadTasks called with:', tasks);
       console.log('Number of tasks to load:', tasks?.length);
-      const { layoutMode, customPositions } = get();
-      const nodes = calculateNodePositions(tasks, layoutMode, customPositions);
+      const { layoutMode, customPositions, dynamicLayout } = get();
+      
+      // Track active task for dynamic layout
+      const activeTask = tasks.find(t => 
+        t.status === 'in-progress' || t.subtasks.some(st => st.status === 'in-progress')
+      );
+      const activeTaskId = activeTask?.id || null;
+      
+      const nodes = calculateNodePositions(tasks, layoutMode, customPositions, dynamicLayout, activeTaskId);
       const edges = createEdges(tasks, layoutMode);
       console.log('Generated nodes:', nodes.length);
       console.log('Generated edges:', edges.length);
-      set({ tasks, nodes, edges, error: null });
+      set({ tasks, nodes, edges, error: null, currentActiveTaskId: activeTaskId });
     },
 
     loadTasksFromPath: async (projectPath: string) => {
@@ -568,8 +665,15 @@ export const useTaskStore = create<TaskStore>((set, get) => {
         const tasksData = await response.json();
         const tasks: Task[] = tasksData.tasks || [];
         
-        const { layoutMode, customPositions } = get();
-        const nodes = calculateNodePositions(tasks, layoutMode, customPositions);
+        const { layoutMode, customPositions, dynamicLayout } = get();
+        
+        // Track active task for dynamic layout
+        const activeTask = tasks.find(t => 
+          t.status === 'in-progress' || t.subtasks.some(st => st.status === 'in-progress')
+        );
+        const activeTaskId = activeTask?.id || null;
+        
+        const nodes = calculateNodePositions(tasks, layoutMode, customPositions, dynamicLayout, activeTaskId);
         const edges = createEdges(tasks, layoutMode);
         
         // Extract project name if not already set
@@ -586,7 +690,8 @@ export const useTaskStore = create<TaskStore>((set, get) => {
           projectPath, 
           projectName: newProjectName,
           isLoading: false, 
-          error: null 
+          error: null,
+          currentActiveTaskId: activeTaskId 
         });
         
         // Save to localStorage after successful load
@@ -616,24 +721,43 @@ export const useTaskStore = create<TaskStore>((set, get) => {
     },
     
     setLayoutMode: (mode) => {
-      const { tasks, customPositions } = get();
-      const nodes = calculateNodePositions(tasks, mode, customPositions);
+      const { tasks, customPositions, dynamicLayout, currentActiveTaskId } = get();
+      const nodes = calculateNodePositions(tasks, mode, customPositions, dynamicLayout, currentActiveTaskId);
       const edges = createEdges(tasks, mode);
       set({ layoutMode: mode, nodes, edges });
     },
     
     selectTask: (taskId) => set({ selectedTaskId: taskId }),
     
-    updateTaskStatus: (taskId, status) => set(state => ({
-      tasks: state.tasks.map(task => 
+    updateTaskStatus: (taskId, status) => set(state => {
+      const updatedTasks = state.tasks.map(task => 
         task.id === taskId ? { ...task, status } : task
-      ),
-      nodes: state.nodes.map(node => 
+      );
+      
+      // Check if active task changed for dynamic layout
+      const newActiveTask = updatedTasks.find(t => 
+        t.status === 'in-progress' || t.subtasks.some(st => st.status === 'in-progress')
+      );
+      const newActiveTaskId = newActiveTask?.id || null;
+      const activeTaskChanged = newActiveTaskId !== state.currentActiveTaskId;
+      
+      // Recalculate layout if dynamic layout is enabled and active task changed
+      let updatedNodes = state.nodes.map(node => 
         node.data.task.id === taskId 
           ? { ...node, data: { ...node.data, task: { ...node.data.task, status } } }
           : node
-      )
-    })),
+      );
+      
+      if (state.dynamicLayout && state.layoutMode === 'graph' && activeTaskChanged) {
+        updatedNodes = calculateNodePositions(updatedTasks, 'graph', state.customPositions, true, newActiveTaskId);
+      }
+      
+      return {
+        tasks: updatedTasks,
+        nodes: updatedNodes,
+        currentActiveTaskId: newActiveTaskId
+      };
+    }),
     
     toggleTaskCollapse: (taskId) => set(state => ({
       nodes: state.nodes.map(node => 
@@ -646,20 +770,38 @@ export const useTaskStore = create<TaskStore>((set, get) => {
     setEditorPreference: (editor) => set({ editorPreference: editor }),
     
     openInEditor: (taskId) => {
-      const { editorPreference } = get();
+      const { editorPreference, projectPath } = get();
       const task = get().tasks.find(t => t.id === taskId);
       if (!task) return;
       
-      const fileName = `task_${String(taskId).padStart(3, '0')}.json`;
-      const filePath = `/Users/jason/ai/tmvisuals/tasks/${fileName}`;
+      if (!projectPath) {
+        console.warn('No project path available');
+        alert('No project path available. Please load a project first.');
+        return;
+      }
       
-      const editorCommand = editorPreference === 'vscode' ? 'code' : 'cursor';
-      const electronAPI = (window as any).electronAPI;
-      if (electronAPI) {
-        electronAPI.openInEditor(filePath, editorCommand);
+      // Determine the file path to open
+      let fileToOpen: string;
+      
+      // Check if task has a specific file path (for tasks loaded from individual files)
+      if (task.filePath) {
+        fileToOpen = task.filePath;
       } else {
-        console.log(`Would open ${filePath} in ${editorCommand}`);
-        alert(`To open in editor: ${editorCommand} ${filePath}`);
+        // For tasks loaded from tasks.json, open the tasks.json file
+        fileToOpen = `${projectPath}/tasks/tasks.json`;
+      }
+      
+      // Create the appropriate URI scheme
+      const uriScheme = editorPreference === 'vscode' ? 'vscode' : 'cursor';
+      const editorUri = `${uriScheme}://file${fileToOpen}`;
+      
+      try {
+        // Use window.open to trigger the URI scheme
+        window.open(editorUri, '_blank');
+        console.log(`Opening file in ${editorPreference}: ${fileToOpen}`);
+      } catch (error) {
+        console.error('Failed to open file in editor:', error);
+        alert(`Failed to open file in ${editorPreference}. Make sure ${editorPreference} is installed and associated with ${uriScheme}:// URLs.`);
       }
     },
     
@@ -705,6 +847,29 @@ export const useTaskStore = create<TaskStore>((set, get) => {
     setProjectName: (name) => {
       set({ projectName: name });
       saveProjectNameToStorage(name);
+    },
+    
+    setFocusOnActiveTask: (focus) => {
+      set({ focusOnActiveTask: focus });
+      saveFocusOnActiveTaskToStorage(focus);
+    },
+    
+    setDynamicLayout: (dynamic) => {
+      const state = get();
+      set({ dynamicLayout: dynamic });
+      saveDynamicLayoutToStorage(dynamic); // Persist the setting
+      
+      // If enabling dynamic layout, recalculate layout with current active task
+      if (dynamic && state.layoutMode === 'graph') {
+        const activeTask = state.tasks.find(t => 
+          t.status === 'in-progress' || t.subtasks.some(st => st.status === 'in-progress')
+        );
+        const activeTaskId = activeTask?.id || null;
+        
+        const nodes = calculateNodePositions(state.tasks, 'graph', state.customPositions, dynamic, activeTaskId);
+        const edges = createEdges(state.tasks, 'graph');
+        set({ nodes, edges, currentActiveTaskId: activeTaskId });
+      }
     },
     
     // Live update methods
@@ -823,6 +988,60 @@ export const useTaskStore = create<TaskStore>((set, get) => {
       } catch (error) {
         console.error('Failed to stop watching project:', error);
         set({ error: `Failed to stop watching project: ${error instanceof Error ? error.message : 'Unknown error'}` });
+      }
+    },
+    
+    clearAllStoredData: () => {
+      if (typeof window === 'undefined') return;
+      
+      try {
+        // Remove all TaskMaster related localStorage data
+        const keysToRemove = [
+          STORAGE_KEY,
+          THEME_STORAGE_KEY,
+          POSITIONS_STORAGE_KEY,
+          VIEWPORT_STORAGE_KEY,
+          PROJECT_NAME_STORAGE_KEY,
+          FOCUS_ON_ACTIVE_TASK_KEY,
+          DYNAMIC_LAYOUT_STORAGE_KEY
+        ];
+        
+        keysToRemove.forEach(key => {
+          localStorage.removeItem(key);
+        });
+        
+        console.log('All stored data cleared');
+        
+        // Reset store to initial state
+        set({
+          projectPath: null,
+          theme: 'system',
+          isDarkMode: getSystemTheme() === 'dark',
+          customPositions: new Map(),
+          lastViewport: null,
+          projectName: null,
+          focusOnActiveTask: true,
+          dynamicLayout: false,
+          editorPreference: 'cursor',
+          selectedTaskId: null,
+          searchQuery: '',
+          layoutMode: 'grid'
+        });
+        
+        // Reapply system theme
+        const systemTheme = getSystemTheme();
+        const isDarkMode = systemTheme === 'dark';
+        
+        if (typeof window !== 'undefined') {
+          if (isDarkMode) {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+        }
+        
+      } catch (error) {
+        console.warn('Failed to clear stored data:', error);
       }
     }
   };

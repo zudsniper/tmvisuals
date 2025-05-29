@@ -20,6 +20,9 @@ export interface Task {
   status: TaskStatus;
   subtasks: Subtask[];
   lastUpdated?: string;
+  // Optional properties added by server for tasks loaded from individual files
+  filePath?: string;
+  fileName?: string;
 }
 
 export interface TaskData {

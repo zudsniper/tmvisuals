@@ -30,8 +30,15 @@ const priorityColorsDark = {
 
 export const TaskNode: React.FC<NodeProps<TaskNodeData>> = ({ data }) => {
   const { task, isCollapsed } = data;
-  const { selectTask, toggleTaskCollapse, openInEditor, layoutMode, isDarkMode } = useTaskStore();
+  const { selectTask, toggleTaskCollapse, openInEditor, layoutMode, isDarkMode, focusOnActiveTask } = useTaskStore();
   const [animatedProgress, setAnimatedProgress] = useState(0);
+  const [prevStatus, setPrevStatus] = useState(task.status);
+  const [prevSubtaskStatuses, setPrevSubtaskStatuses] = useState(
+    task.subtasks.map(st => st.status)
+  );
+  const [statusChangeAnimation, setStatusChangeAnimation] = useState(false);
+  const [completionCelebration, setCompletionCelebration] = useState(false);
+  const [subtaskCompletionAnimation, setSubtaskCompletionAnimation] = useState<string[]>([]);
   const animationRef = useRef<number>();
   
   // Calculate progress from subtasks
@@ -42,6 +49,40 @@ export const TaskNode: React.FC<NodeProps<TaskNodeData>> = ({ data }) => {
   // Check if this task is actively being worked on
   const isActivelyWorking = task.status === 'in-progress' || 
     task.subtasks.some(subtask => subtask.status === 'in-progress');
+  
+  // Status change detection and animations
+  useEffect(() => {
+    // Main task status change
+    if (prevStatus !== task.status) {
+      setStatusChangeAnimation(true);
+      
+      // Special celebration for completion
+      if (task.status === 'done' && prevStatus !== 'done') {
+        setCompletionCelebration(true);
+        setTimeout(() => setCompletionCelebration(false), 2000);
+      }
+      
+      setTimeout(() => setStatusChangeAnimation(false), 1000);
+      setPrevStatus(task.status);
+    }
+
+    // Subtask completion detection
+    const currentSubtaskStatuses = task.subtasks.map(st => st.status);
+    const newlyCompletedSubtasks: string[] = [];
+    
+    currentSubtaskStatuses.forEach((status, index) => {
+      if (status === 'done' && prevSubtaskStatuses[index] !== 'done') {
+        newlyCompletedSubtasks.push(task.subtasks[index].id);
+      }
+    });
+
+    if (newlyCompletedSubtasks.length > 0) {
+      setSubtaskCompletionAnimation(newlyCompletedSubtasks);
+      setTimeout(() => setSubtaskCompletionAnimation([]), 1000);
+    }
+
+    setPrevSubtaskStatuses(currentSubtaskStatuses);
+  }, [task.status, task.subtasks, prevStatus, prevSubtaskStatuses]);
   
   // Check if this task has recent activity (updated within last 10 minutes)
   const hasRecentActivity = useMemo(() => {
@@ -117,21 +158,28 @@ export const TaskNode: React.FC<NodeProps<TaskNodeData>> = ({ data }) => {
 
   const showHandles = layoutMode === 'graph';
   const priorityColorMap = isDarkMode ? priorityColorsDark : priorityColors;
+  const isDoneTask = task.status === 'done';
+  
+  // Enhanced visual highlighting when focus is enabled
+  const shouldHighlight = focusOnActiveTask && isActivelyWorking && !isDoneTask;
   
   return (
-    <div 
-      className={`
-        ${isDarkMode 
-          ? 'bg-gray-800 text-white border-gray-600' 
-          : 'bg-white text-gray-800 border-gray-300'
-        } 
-        rounded-lg shadow-md p-4 min-w-[250px] max-w-[350px] border-2 
-        ${priorityColorMap[task.priority]} 
-        cursor-pointer hover:shadow-lg transition-all duration-200
-        ${hasRecentActivity ? 'ring-2 ring-blue-400 ring-opacity-60 animate-pulse working-shimmer' : ''}
-        ${isActivelyWorking ? 'shadow-lg shadow-blue-500/20 working-pulse' : ''}
-      `}
-      onClick={handleNodeClick}
+    <>
+      <div 
+        className={`
+          ${isDarkMode 
+            ? 'bg-gray-800 text-white border-gray-600' 
+            : 'bg-white text-gray-800 border-gray-300'
+          } 
+          rounded-lg shadow-md p-4 min-w-[250px] max-w-[350px] border-2 
+          ${priorityColorMap[task.priority]} 
+          cursor-pointer hover:shadow-lg transition-all duration-300
+          ${shouldHighlight ? 'shadow-2xl shadow-orange-500/50 ring-4 ring-orange-400/60 ring-offset-2 active-task-border-glow' : ''}
+          ${isActivelyWorking && !shouldHighlight ? 'shadow-lg shadow-orange-500/30 ring-2 ring-orange-400/40' : ''}
+          ${statusChangeAnimation ? 'animate-status-change' : ''}
+          ${completionCelebration ? 'animate-completion-celebration' : ''}
+        `}
+        onClick={handleNodeClick}
     >
       {/* Only show connection handles in graph mode */}
       {showHandles && (
@@ -151,11 +199,35 @@ export const TaskNode: React.FC<NodeProps<TaskNodeData>> = ({ data }) => {
             #{task.id}
           </span>
           
-          {/* Activity indicator for working tasks */}
+          {/* Enhanced activity indicator for working tasks */}
           {hasRecentActivity && (
+            <div className="flex items-center gap-1 animate-pulse">
+              <Activity className="w-4 h-4 text-orange-500 animate-bounce" />
+              <span className="text-xs text-orange-500 font-bold">Live</span>
+            </div>
+          )}
+          
+          {/* Enhanced orange working indicator for active tasks without subtasks */}
+          {isActivelyWorking && task.subtasks.length === 0 && (
             <div className="flex items-center gap-1">
-              <Activity className="w-4 h-4 text-blue-500 animate-bounce" />
-              <span className="text-xs text-blue-500 font-medium">Working</span>
+              <div className="w-3 h-3 bg-orange-500 rounded-full animate-ping"></div>
+              <span className="text-xs text-orange-500 font-bold tracking-wide">ACTIVE</span>
+            </div>
+          )}
+          
+          {/* Status change indicator */}
+          {statusChangeAnimation && (
+            <div className="flex items-center gap-1">
+              <div className="w-2 h-2 bg-blue-500 rounded-full animate-ping"></div>
+              <span className="text-xs text-blue-500 font-medium">Updated</span>
+            </div>
+          )}
+          
+          {/* Completion celebration indicator */}
+          {completionCelebration && (
+            <div className="flex items-center gap-1">
+              <div className="w-3 h-3 bg-green-500 rounded-full animate-ping"></div>
+              <span className="text-xs text-green-500 font-bold">DONE!</span>
             </div>
           )}
         </div>
@@ -205,27 +277,60 @@ export const TaskNode: React.FC<NodeProps<TaskNodeData>> = ({ data }) => {
             <div className={`mt-3 pt-3 border-t ${
               isDarkMode ? 'border-gray-600' : 'border-gray-200'
             }`}>
-              <p className={`text-xs font-medium mb-1 ${
+              <p className={`text-xs font-medium mb-2 ${
                 isDarkMode ? 'text-gray-400' : 'text-gray-500'
               }`}>
                 Subtasks: {task.subtasks.filter(st => st.status === 'done').length}/{task.subtasks.length}
               </p>
-              <div className={`w-full rounded-full h-2 ${
+              
+              {/* Individual subtasks with clean styling */}
+              <div className="space-y-1 mb-3">
+                {task.subtasks.slice(0, isCollapsed ? 2 : task.subtasks.length).map((subtask) => (
+                  <div 
+                    key={subtask.id}
+                    className={`flex items-center gap-2 text-xs py-1 px-2 rounded transition-all duration-300 ${
+                      subtaskCompletionAnimation.includes(subtask.id) ? 'animate-subtask-complete' : ''
+                    } ${
+                      subtask.status === 'in-progress'
+                        ? `${isDarkMode ? 'bg-orange-900/20 text-orange-300' : 'bg-orange-50 text-orange-700'}`
+                        : `${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`
+                    }`}
+                  >
+                    {subtask.status === 'done' ? (
+                      <CheckCircle className="w-3 h-3 text-green-500 flex-shrink-0" />
+                    ) : subtask.status === 'in-progress' ? (
+                      <Clock className="w-3 h-3 text-orange-500 flex-shrink-0" />
+                    ) : (
+                      <Circle className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                    )}
+                    <span className="truncate">{subtask.title}</span>
+                  </div>
+                ))}
+                {isCollapsed && task.subtasks.length > 2 && (
+                  <p className={`text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                    +{task.subtasks.length - 2} more...
+                  </p>
+                )}
+              </div>
+              
+              <div className={`w-full rounded-full h-2 relative overflow-hidden ${
                 isDarkMode ? 'bg-gray-700' : 'bg-gray-200'
               }`}>
                 <div 
                   className={`h-2 rounded-full transition-all duration-300 ease-out ${
                     isActivelyWorking 
-                      ? 'bg-gradient-to-r from-blue-500 to-blue-600 progress-glow' 
+                      ? 'bg-gradient-to-r from-orange-500 to-orange-600' 
                       : 'bg-blue-500'
-                  } ${isActivelyWorking ? 'shadow-sm shadow-blue-500/50' : ''}`}
+                  }`}
                   style={{ width: `${animatedProgress}%` }}
-                >
-                  {/* Working animation overlay */}
-                  {isActivelyWorking && animatedProgress > 0 && (
-                    <div className="h-full w-full bg-white bg-opacity-20 rounded-full animate-pulse" />
-                  )}
-                </div>
+                />
+                
+                {/* Sliding animation overlay for active tasks */}
+                {isActivelyWorking && (
+                  <div className="absolute top-0 left-0 h-full w-full overflow-hidden rounded-full">
+                    <div className="h-full w-8 bg-gradient-to-r from-transparent via-white to-transparent opacity-30 animate-slide-right" />
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -249,5 +354,6 @@ export const TaskNode: React.FC<NodeProps<TaskNodeData>> = ({ data }) => {
         />
       )}
     </div>
+    </>
   );
 };
