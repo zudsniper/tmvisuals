@@ -24,6 +24,11 @@ interface TaskStore {
   lastViewport: Viewport | null;
   projectName: string | null;
   
+  // Live updates
+  isLiveUpdateEnabled: boolean;
+  sseConnection: EventSource | null;
+  lastUpdateTime: string | null;
+  
   // Actions
   loadTasks: (tasks: Task[]) => void;
   loadTasksFromPath: (projectPath: string) => Promise<void>;
@@ -41,6 +46,12 @@ interface TaskStore {
   updateNodePosition: (nodeId: string, position: { x: number; y: number }) => void;
   setLastViewport: (viewport: Viewport) => void;
   setProjectName: (name: string | null) => void;
+  
+  // Live update actions
+  enableLiveUpdates: () => void;
+  disableLiveUpdates: () => void;
+  startWatchingProject: (projectPath: string) => Promise<void>;
+  stopWatchingProject: (projectPath: string) => Promise<void>;
 }
 
 // Grid layout: simple ordered grid without overlaps, extends downward
@@ -100,23 +111,28 @@ function calculateGridLayout(tasks: Task[], customPositions: Map<string, { x: nu
   return nodes;
 }
 
-// Enhanced timeline-style graph layout with intelligent fan-out positioning for better relationship lines
+// Enhanced timeline-style graph layout with intelligent clustering and improved density management
 function calculateGraphLayout(tasks: Task[], customPositions: Map<string, { x: number; y: number }>): TaskNode[] {
   const nodes: TaskNode[] = [];
   const levelMap = new Map<number, number>();
   const visiting = new Set<number>(); // Track nodes currently being visited to detect cycles
   
-  // Timeline layout dimensions - horizontal flow
-  const NODE_WIDTH = 300;
-  const NODE_HEIGHT = 140;
-  const HORIZONTAL_SPACING = 250; // Increased spacing for better relationship lines
-  const VERTICAL_SPACING = 100;   // Increased vertical spacing for better fan-out
-  const MARGIN = 100;             // Margin from edges
-  const TIMELINE_START_X = MARGIN; // Where timeline starts
+  // Layout dimensions - optimized for better visibility
+  const NODE_WIDTH = 280;
+  const NODE_HEIGHT = 120;
+  const HORIZONTAL_SPACING = 200; // Reduced for better density
+  const VERTICAL_SPACING = 80;    // Reduced for better density
+  const MARGIN = 80;
+  const TIMELINE_START_X = MARGIN;
   
   // Get viewport dimensions
+  const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1400;
   const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 800;
-  const availableHeight = viewportHeight - (2 * MARGIN);
+  const availableWidth = viewportWidth - (2 * MARGIN);
+  const availableHeight = viewportHeight - (2 * MARGIN + 150); // Account for top nav
+  
+  // Calculate max columns that can fit horizontally
+  const maxColumns = Math.floor(availableWidth / (NODE_WIDTH + HORIZONTAL_SPACING));
   
   // First pass: determine timeline levels (time columns) based on dependencies
   const calculateLevel = (taskId: number): number => {
@@ -158,18 +174,42 @@ function calculateGraphLayout(tasks: Task[], customPositions: Map<string, { x: n
     timelineColumns.get(level)!.push(task);
   });
   
-  // Enhanced positioning with intelligent fan-out for relationship lines
+  // Handle layout wrapping if we have too many columns
+  const maxLevel = Math.max(...Array.from(timelineColumns.keys()));
+  const needsWrapping = maxLevel >= maxColumns;
+  
+  // Enhanced positioning with intelligent clustering and wrapping
   for (const [timeColumn, tasksInColumn] of timelineColumns) {
     const tasksCount = tasksInColumn.length;
     
-    // Sort tasks by their dependency relationships for better visual flow
+    // Calculate wrapped position if needed
+    let effectiveColumn = timeColumn;
+    let rowOffset = 0;
+    
+    if (needsWrapping) {
+      effectiveColumn = timeColumn % maxColumns;
+      rowOffset = Math.floor(timeColumn / maxColumns);
+    }
+    
+    // Sort tasks by priority and dependency count for better visual hierarchy
     tasksInColumn.sort((a, b) => {
-      // Tasks with more dependencies appear higher to create better visual flow
+      // First by priority (high priority at top)
+      const priorityOrder = { 'high': 3, 'medium': 2, 'low': 1 };
+      const aPriority = priorityOrder[a.priority];
+      const bPriority = priorityOrder[b.priority];
+      if (aPriority !== bPriority) return bPriority - aPriority;
+      
+      // Then by status (in-progress first, then pending, then done)
+      const statusOrder = { 'in-progress': 3, 'pending': 2, 'done': 1 };
+      const aStatus = statusOrder[a.status];
+      const bStatus = statusOrder[b.status];
+      if (aStatus !== bStatus) return bStatus - aStatus;
+      
+      // Finally by dependency count for visual flow
       const aDeps = a.dependencies.length;
       const bDeps = b.dependencies.length;
       if (aDeps !== bDeps) return bDeps - aDeps;
       
-      // Secondary sort by task ID for consistency
       return a.id - b.id;
     });
     
@@ -191,34 +231,39 @@ function calculateGraphLayout(tasks: Task[], customPositions: Map<string, { x: n
         return;
       }
       
-      // Enhanced timeline positioning with fan-out consideration
-      const x = TIMELINE_START_X + timeColumn * (NODE_WIDTH + HORIZONTAL_SPACING);
+      // Calculate base position
+      const baseX = TIMELINE_START_X + effectiveColumn * (NODE_WIDTH + HORIZONTAL_SPACING);
+      const baseY = MARGIN + 120; // Account for top navigation
       
-      // Calculate vertical positioning with intelligent fan-out
+      // Add row offset for wrapped layouts
+      const wrappedYOffset = rowOffset * (availableHeight / 2);
+      
+      // Calculate vertical positioning with improved clustering
       let y: number;
       
       if (tasksCount === 1) {
-        // Single task: center it vertically
-        y = MARGIN + 100 + availableHeight / 2 - NODE_HEIGHT / 2;
+        // Single task: center it in available space
+        y = baseY + wrappedYOffset + (availableHeight / 4) - NODE_HEIGHT / 2;
       } else {
-        // Multiple tasks: create fan-out pattern for better relationship lines
-        const totalColumnHeight = tasksCount * NODE_HEIGHT + (tasksCount - 1) * VERTICAL_SPACING;
+        // Multiple tasks: use adaptive spacing based on available height
+        const effectiveHeight = availableHeight / 2; // Use half height per "row"
+        const totalNeededHeight = tasksCount * NODE_HEIGHT + (tasksCount - 1) * VERTICAL_SPACING;
         
-        if (totalColumnHeight <= availableHeight) {
-          // Tasks fit in viewport: center the group and fan out evenly
-          const startY = MARGIN + 100 + (availableHeight - totalColumnHeight) / 2;
+        if (totalNeededHeight <= effectiveHeight) {
+          // Tasks fit comfortably: center the group
+          const startY = baseY + wrappedYOffset + (effectiveHeight - totalNeededHeight) / 2;
           y = startY + index * (NODE_HEIGHT + VERTICAL_SPACING);
         } else {
-          // Tasks don't fit: use adaptive spacing
-          const adaptiveSpacing = Math.max(60, (availableHeight - tasksCount * NODE_HEIGHT) / (tasksCount - 1));
-          y = MARGIN + 100 + index * (NODE_HEIGHT + adaptiveSpacing);
+          // Tasks need compression: use adaptive spacing
+          const adaptiveSpacing = Math.max(40, (effectiveHeight - tasksCount * NODE_HEIGHT) / Math.max(1, tasksCount - 1));
+          y = baseY + wrappedYOffset + index * (NODE_HEIGHT + adaptiveSpacing);
         }
       }
       
       nodes.push({
         id: nodeId,
         type: 'task',
-        position: { x, y },
+        position: { x: baseX, y },
         data: {
           task,
           isCollapsed: false
@@ -394,6 +439,10 @@ function createEdges(tasks: Task[], layoutMode: LayoutMode): TaskEdge[] {
   const edges: TaskEdge[] = [];
   const edgeConnections = new Map<string, number>(); // Track multiple edges between same nodes
   
+  // Create task lookup map for quick access
+  const taskMap = new Map<number, Task>();
+  tasks.forEach(task => taskMap.set(task.id, task));
+  
   tasks.forEach(task => {
     task.dependencies.forEach(depId => {
       const edgeKey = `${depId}-${task.id}`;
@@ -402,17 +451,50 @@ function createEdges(tasks: Task[], layoutMode: LayoutMode): TaskEdge[] {
       
       // Create a single curved edge that represents all dependencies between these nodes
       if (existingCount === 0) {
+        const sourceTask = taskMap.get(depId);
+        const targetTask = task;
+        
+        // Determine if this edge should be animated based on task statuses
+        const isSourceActive = sourceTask?.status === 'in-progress' || 
+          sourceTask?.subtasks.some(st => st.status === 'in-progress');
+        const isTargetActive = targetTask.status === 'in-progress' || 
+          targetTask.subtasks.some(st => st.status === 'in-progress');
+        const shouldAnimate = isSourceActive || isTargetActive;
+        
+        // Determine edge color and style based on task statuses
+        let edgeColor = '#64748b'; // Default gray
+        let edgeOpacity = 0.6;
+        let strokeWidth = 2;
+        let strokeDasharray: string | undefined = undefined;
+        
+        if (isTargetActive) {
+          edgeColor = '#3b82f6'; // Blue for incoming to active tasks
+          edgeOpacity = 0.8;
+          strokeWidth = 3;
+        } else if (isSourceActive) {
+          edgeColor = '#10b981'; // Green for outgoing from active tasks
+          edgeOpacity = 0.7;
+          strokeWidth = 2.5;
+        }
+        
+        // Special case: if target is pending but source is done, show as completed dependency
+        if (sourceTask?.status === 'done' && targetTask.status === 'pending') {
+          edgeColor = '#22c55e'; // Green for completed dependencies
+          edgeOpacity = 0.6;
+          strokeDasharray = '5,5'; // Dashed line for completed dependencies
+        }
+        
         edges.push({
           id: `edge-${depId}-${task.id}`,
           source: `task-${depId}`,
           target: `task-${task.id}`,
           type: 'smoothstep', // Use smooth curved edges
-          animated: false,    // Disable animation for better performance
+          animated: shouldAnimate, // Animate edges connected to active tasks
           style: {
-            stroke: '#64748b',
-            strokeWidth: 2.5,   // Slightly thicker for better visibility
-            strokeOpacity: 0.8, // More opaque for curved lines
-            strokeDasharray: undefined // Solid lines
+            stroke: edgeColor,
+            strokeWidth,
+            strokeOpacity: edgeOpacity,
+            strokeDasharray
           }
         });
       }
@@ -455,6 +537,11 @@ export const useTaskStore = create<TaskStore>((set, get) => {
     customPositions: loadCustomPositions(),
     lastViewport: loadLastViewport(),
     projectName: loadProjectNameFromStorage(),
+    
+    // Live updates
+    isLiveUpdateEnabled: false,
+    sseConnection: null,
+    lastUpdateTime: null,
     
     loadTasks: (tasks) => {
       console.log('loadTasks called with:', tasks);
@@ -507,6 +594,10 @@ export const useTaskStore = create<TaskStore>((set, get) => {
         if (!currentProjectName) {
           saveProjectNameToStorage(newProjectName);
         }
+        
+        // Start watching project for live updates
+        get().startWatchingProject(projectPath);
+        
       } catch (error) {
         console.error('Failed to load tasks:', error);
         set({ 
@@ -614,6 +705,125 @@ export const useTaskStore = create<TaskStore>((set, get) => {
     setProjectName: (name) => {
       set({ projectName: name });
       saveProjectNameToStorage(name);
+    },
+    
+    // Live update methods
+    enableLiveUpdates: () => {
+      const state = get();
+      if (state.sseConnection || state.isLiveUpdateEnabled) return;
+      
+      try {
+        console.log('Connecting to live updates...');
+        const eventSource = new EventSource('/api/live-updates');
+        
+        eventSource.onopen = () => {
+          console.log('SSE connection opened');
+          set({ isLiveUpdateEnabled: true, sseConnection: eventSource });
+        };
+        
+        eventSource.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            console.log('Received SSE message:', data);
+            
+            if (data.type === 'tasks-updated') {
+              console.log('Tasks updated, refreshing...');
+              const { layoutMode, customPositions } = get();
+              const tasks: Task[] = data.data.tasks || [];
+              const nodes = calculateNodePositions(tasks, layoutMode, customPositions);
+              const edges = createEdges(tasks, layoutMode);
+              
+              set({ 
+                tasks,
+                nodes,
+                edges,
+                lastUpdateTime: data.timestamp,
+                error: null
+              });
+            } else if (data.type === 'error') {
+              console.error('SSE error:', data.message);
+              set({ error: data.message });
+            }
+          } catch (parseError) {
+            console.error('Failed to parse SSE message:', parseError);
+          }
+        };
+        
+        eventSource.onerror = (error) => {
+          console.error('SSE connection error:', error);
+          set({ 
+            isLiveUpdateEnabled: false, 
+            sseConnection: null,
+            error: 'Live updates connection lost' 
+          });
+        };
+        
+      } catch (error) {
+        console.error('Failed to enable live updates:', error);
+        set({ error: 'Failed to enable live updates' });
+      }
+    },
+    
+    disableLiveUpdates: () => {
+      const state = get();
+      if (state.sseConnection) {
+        state.sseConnection.close();
+      }
+      set({ 
+        isLiveUpdateEnabled: false, 
+        sseConnection: null 
+      });
+      console.log('Live updates disabled');
+    },
+    
+    startWatchingProject: async (projectPath: string) => {
+      try {
+        const response = await fetch('/api/watch-project', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectPath })
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to start watching project');
+        }
+        
+        const result = await response.json();
+        console.log('Started watching project:', result);
+        
+        // Enable live updates if not already enabled
+        const state = get();
+        if (!state.isLiveUpdateEnabled) {
+          state.enableLiveUpdates();
+        }
+        
+      } catch (error) {
+        console.error('Failed to start watching project:', error);
+        set({ error: `Failed to start watching project: ${error instanceof Error ? error.message : 'Unknown error'}` });
+      }
+    },
+    
+    stopWatchingProject: async (projectPath: string) => {
+      try {
+        const response = await fetch('/api/unwatch-project', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectPath })
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to stop watching project');
+        }
+        
+        const result = await response.json();
+        console.log('Stopped watching project:', result);
+        
+      } catch (error) {
+        console.error('Failed to stop watching project:', error);
+        set({ error: `Failed to stop watching project: ${error instanceof Error ? error.message : 'Unknown error'}` });
+      }
     }
   };
 });

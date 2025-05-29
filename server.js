@@ -3,6 +3,7 @@ import cors from 'cors';
 import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import chokidar from 'chokidar';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,6 +13,13 @@ const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
+
+// Store active SSE connections
+const sseConnections = new Map();
+let connectionId = 0;
+
+// Store file watchers
+const fileWatchers = new Map();
 
 // Serve static files from the dist directory when built
 const distPath = path.join(__dirname, 'dist');
@@ -30,6 +38,259 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+
+// Server-Sent Events endpoint for live updates
+app.get('/api/live-updates', (req, res) => {
+  const currentConnectionId = ++connectionId;
+  
+  // Set headers for SSE
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Cache-Control'
+  });
+
+  // Store the connection
+  sseConnections.set(currentConnectionId, res);
+  
+  // Send initial connection event
+  res.write(`data: ${JSON.stringify({ type: 'connected', id: currentConnectionId })}\n\n`);
+  
+  // Handle client disconnect
+  req.on('close', () => {
+    sseConnections.delete(currentConnectionId);
+    console.log(`SSE connection ${currentConnectionId} closed`);
+  });
+  
+  req.on('error', () => {
+    sseConnections.delete(currentConnectionId);
+  });
+});
+
+// Start watching a project directory for changes
+app.post('/api/watch-project', (req, res) => {
+  try {
+    const { projectPath } = req.body;
+    
+    if (!projectPath) {
+      return res.status(400).json({ error: 'Project path is required' });
+    }
+    
+    const safeProjectPath = path.resolve(projectPath);
+    const tasksPath = path.join(safeProjectPath, 'tasks');
+    
+    // Stop existing watcher for this path if any
+    if (fileWatchers.has(safeProjectPath)) {
+      fileWatchers.get(safeProjectPath).close();
+    }
+    
+    // Check if tasks directory exists
+    if (!fs.existsSync(tasksPath)) {
+      return res.json({ 
+        message: 'No tasks directory found to watch',
+        watching: false
+      });
+    }
+    
+    // Start watching the tasks directory
+    const watcher = chokidar.watch(tasksPath, {
+      persistent: true,
+      ignoreInitial: true,
+      depth: 1
+    });
+    
+    watcher.on('change', async (filePath) => {
+      console.log(`File changed: ${filePath}`);
+      
+      try {
+        // Load updated tasks
+        const updatedTasks = await loadTasksFromPath(safeProjectPath);
+        
+        // Broadcast to all SSE connections
+        const updateEvent = {
+          type: 'tasks-updated',
+          data: updatedTasks,
+          timestamp: new Date().toISOString(),
+          changedFile: path.basename(filePath)
+        };
+        
+        broadcastToSSE(updateEvent);
+      } catch (error) {
+        console.error('Error loading updated tasks:', error);
+        broadcastToSSE({
+          type: 'error',
+          message: 'Failed to load updated tasks',
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+    
+    watcher.on('add', async (filePath) => {
+      console.log(`File added: ${filePath}`);
+      try {
+        const updatedTasks = await loadTasksFromPath(safeProjectPath);
+        broadcastToSSE({
+          type: 'tasks-updated',
+          data: updatedTasks,
+          timestamp: new Date().toISOString(),
+          changedFile: path.basename(filePath),
+          action: 'added'
+        });
+      } catch (error) {
+        console.error('Error loading tasks after file add:', error);
+      }
+    });
+    
+    watcher.on('unlink', async (filePath) => {
+      console.log(`File removed: ${filePath}`);
+      try {
+        const updatedTasks = await loadTasksFromPath(safeProjectPath);
+        broadcastToSSE({
+          type: 'tasks-updated',
+          data: updatedTasks,
+          timestamp: new Date().toISOString(),
+          changedFile: path.basename(filePath),
+          action: 'removed'
+        });
+      } catch (error) {
+        console.error('Error loading tasks after file removal:', error);
+      }
+    });
+    
+    fileWatchers.set(safeProjectPath, watcher);
+    
+    res.json({
+      message: 'Started watching project for changes',
+      projectPath: safeProjectPath,
+      tasksPath: tasksPath,
+      watching: true
+    });
+    
+  } catch (error) {
+    console.error('Watch project error:', error);
+    res.status(500).json({ error: 'Failed to start watching project' });
+  }
+});
+
+// Stop watching a project directory
+app.post('/api/unwatch-project', (req, res) => {
+  try {
+    const { projectPath } = req.body;
+    
+    if (!projectPath) {
+      return res.status(400).json({ error: 'Project path is required' });
+    }
+    
+    const safeProjectPath = path.resolve(projectPath);
+    
+    if (fileWatchers.has(safeProjectPath)) {
+      fileWatchers.get(safeProjectPath).close();
+      fileWatchers.delete(safeProjectPath);
+      
+      res.json({
+        message: 'Stopped watching project',
+        projectPath: safeProjectPath,
+        watching: false
+      });
+    } else {
+      res.json({
+        message: 'Project was not being watched',
+        projectPath: safeProjectPath,
+        watching: false
+      });
+    }
+    
+  } catch (error) {
+    console.error('Unwatch project error:', error);
+    res.status(500).json({ error: 'Failed to stop watching project' });
+  }
+});
+
+// Helper function to broadcast to all SSE connections
+function broadcastToSSE(data) {
+  const message = `data: ${JSON.stringify(data)}\n\n`;
+  
+  for (const [connectionId, res] of sseConnections) {
+    try {
+      res.write(message);
+    } catch (error) {
+      console.error(`Failed to send SSE message to connection ${connectionId}:`, error);
+      sseConnections.delete(connectionId);
+    }
+  }
+}
+
+// Helper function to load tasks from a project path (extracted from existing endpoint)
+async function loadTasksFromPath(projectPath) {
+  const safeProjectPath = path.resolve(projectPath);
+  const tasksPath = path.join(safeProjectPath, 'tasks');
+  
+  // Check if tasks directory exists
+  if (!fs.existsSync(tasksPath)) {
+    return { 
+      tasks: [], 
+      projectPath: safeProjectPath,
+      tasksPath: tasksPath,
+      message: 'No tasks directory found in project'
+    };
+  }
+  
+  // Look for tasks.json file first
+  const tasksJsonPath = path.join(tasksPath, 'tasks.json');
+  try {
+    const tasksJsonData = await fs.readFile(tasksJsonPath, 'utf8');
+    const parsedData = JSON.parse(tasksJsonData);
+    return { 
+      tasks: parsedData.tasks || parsedData || [],
+      projectPath: safeProjectPath,
+      tasksPath: tasksPath,
+      source: 'tasks.json'
+    };
+  } catch (error) {
+    // tasks.json doesn't exist or is invalid, fall back to scanning .txt files
+  }
+  
+  // Scan for individual task files (.txt, .md, etc.)
+  const taskFiles = await fs.readdir(tasksPath);
+  const tasks = [];
+  let taskId = 1;
+  
+  for (const file of taskFiles) {
+    if (file.startsWith('task_') && (file.endsWith('.txt') || file.endsWith('.md'))) {
+      try {
+        const filePath = path.join(tasksPath, file);
+        const content = await fs.readFile(filePath, 'utf8');
+        
+        // Parse task content - look for basic structure
+        const lines = content.split('\n').filter(line => line.trim());
+        const title = lines[0] || file.replace(/\.(txt|md)$/, '');
+        const description = lines.slice(1).join('\n').trim() || 'No description available';
+        
+        tasks.push({
+          id: taskId++,
+          title: title.replace(/^#*\s*/, ''), // Remove markdown headers
+          description: description,
+          status: 'pending',
+          dependencies: [], // Could be parsed from content later
+          filePath: filePath,
+          fileName: file
+        });
+      } catch (fileError) {
+        console.warn(`Failed to read task file ${file}:`, fileError.message);
+      }
+    }
+  }
+  
+  return { 
+    tasks,
+    projectPath: safeProjectPath,
+    tasksPath: tasksPath,
+    source: 'individual_files',
+    filesFound: tasks.length
+  };
+}
 
 // Get directory contents
 app.get('/api/browse', async (req, res) => {
@@ -97,91 +358,8 @@ app.get('/api/tasks', async (req, res) => {
       return res.status(400).json({ error: 'Project path is required' });
     }
     
-    // Security: Prevent directory traversal attacks
-    const safeProjectPath = path.resolve(projectPath);
-    const tasksPath = path.join(safeProjectPath, 'tasks');
-    
-    // Check if project directory exists
-    try {
-      const projectStats = await fs.stat(safeProjectPath);
-      if (!projectStats.isDirectory()) {
-        return res.status(400).json({ error: 'Project path is not a directory' });
-      }
-    } catch (error) {
-      return res.status(404).json({ error: 'Project directory not found' });
-    }
-    
-    // Check if tasks directory exists
-    let tasksExist = false;
-    try {
-      const tasksStats = await fs.stat(tasksPath);
-      tasksExist = tasksStats.isDirectory();
-    } catch (error) {
-      // Tasks directory doesn't exist - that's okay, return empty tasks
-    }
-    
-    if (!tasksExist) {
-      return res.json({ 
-        tasks: [], 
-        projectPath: safeProjectPath,
-        tasksPath: tasksPath,
-        message: 'No tasks directory found in project. Create a tasks/ directory to add tasks.'
-      });
-    }
-    
-    // Look for tasks.json file first
-    const tasksJsonPath = path.join(tasksPath, 'tasks.json');
-    try {
-      const tasksJsonData = await fs.readFile(tasksJsonPath, 'utf8');
-      const parsedData = JSON.parse(tasksJsonData);
-      return res.json({ 
-        tasks: parsedData.tasks || parsedData || [],
-        projectPath: safeProjectPath,
-        tasksPath: tasksPath,
-        source: 'tasks.json'
-      });
-    } catch (error) {
-      // tasks.json doesn't exist or is invalid, fall back to scanning .txt files
-    }
-    
-    // Scan for individual task files (.txt, .md, etc.)
-    const taskFiles = await fs.readdir(tasksPath);
-    const tasks = [];
-    let taskId = 1;
-    
-    for (const file of taskFiles) {
-      if (file.startsWith('task_') && (file.endsWith('.txt') || file.endsWith('.md'))) {
-        try {
-          const filePath = path.join(tasksPath, file);
-          const content = await fs.readFile(filePath, 'utf8');
-          
-          // Parse task content - look for basic structure
-          const lines = content.split('\n').filter(line => line.trim());
-          const title = lines[0] || file.replace(/\.(txt|md)$/, '');
-          const description = lines.slice(1).join('\n').trim() || 'No description available';
-          
-          tasks.push({
-            id: taskId++,
-            title: title.replace(/^#*\s*/, ''), // Remove markdown headers
-            description: description,
-            status: 'pending',
-            dependencies: [], // Could be parsed from content later
-            filePath: filePath,
-            fileName: file
-          });
-        } catch (fileError) {
-          console.warn(`Failed to read task file ${file}:`, fileError.message);
-        }
-      }
-    }
-    
-    res.json({ 
-      tasks,
-      projectPath: safeProjectPath,
-      tasksPath: tasksPath,
-      source: 'individual_files',
-      filesFound: tasks.length
-    });
+    const result = await loadTasksFromPath(projectPath);
+    res.json(result);
     
   } catch (error) {
     console.error('Tasks loading error:', error);

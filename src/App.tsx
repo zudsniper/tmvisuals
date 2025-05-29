@@ -49,7 +49,12 @@ function Flow() {
     setLastViewport,
     // Project name features
     projectName,
-    setProjectName
+    setProjectName,
+    // Live updates
+    isLiveUpdateEnabled,
+    lastUpdateTime,
+    enableLiveUpdates,
+    disableLiveUpdates
   } = useTaskStore();
   const [flowNodes, setNodes, onNodesChange] = useNodesState(nodes);
   const [flowEdges, setEdges, onEdgesChange] = useEdgesState(edges);
@@ -105,9 +110,10 @@ function Flow() {
   };
 
   useEffect(() => {
+    console.log('Syncing nodes from store:', nodes.length, 'layout mode:', layoutMode);
     setNodes(nodes);
     setEdges(edges);
-  }, [nodes, edges, setNodes, setEdges]);
+  }, [nodes, edges, setNodes, setEdges, layoutMode]);
 
   // Handle node position changes to persist custom positions
   const handleNodesChange = useCallback((changes: any[]) => {
@@ -394,13 +400,47 @@ function Flow() {
               <div className={`text-xs text-center ${
                 isDarkMode ? 'text-gray-400' : 'text-gray-500'
               }`}>
-                <div className="font-mono truncate">{projectPath}</div>
-                <div>{tasks.length} tasks loaded</div>
+                {projectPath}
               </div>
             ) : (
               <div className={`text-xs text-center ${
                 isDarkMode ? 'text-gray-400' : 'text-gray-500'
-              }`}>No project selected</div>
+              }`}>
+                <button 
+                  onClick={() => setShowFileBrowser(true)}
+                  className="hover:underline"
+                >
+                  Click to open a project folder
+                </button>
+              </div>
+            )}
+            
+            {/* Live Update Indicator */}
+            {projectPath && (
+              <div className="flex items-center justify-center gap-2 mt-1">
+                <button
+                  onClick={isLiveUpdateEnabled ? disableLiveUpdates : enableLiveUpdates}
+                  className={`flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors ${
+                    isLiveUpdateEnabled
+                      ? (isDarkMode ? 'bg-green-900 text-green-300 border border-green-700' : 'bg-green-50 text-green-700 border border-green-200')
+                      : (isDarkMode ? 'bg-gray-700 text-gray-400 border border-gray-600' : 'bg-gray-100 text-gray-600 border border-gray-200')
+                  }`}
+                  title={isLiveUpdateEnabled ? 'Live updates enabled - click to disable' : 'Live updates disabled - click to enable'}
+                >
+                  <div className={`w-2 h-2 rounded-full ${
+                    isLiveUpdateEnabled 
+                      ? 'bg-green-500 animate-pulse' 
+                      : 'bg-gray-400'
+                  }`} />
+                  <span>{isLiveUpdateEnabled ? 'Live' : 'Static'}</span>
+                </button>
+                
+                {lastUpdateTime && (
+                  <span className={`text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                    Updated: {new Date(lastUpdateTime).toLocaleTimeString()}
+                  </span>
+                )}
+              </div>
             )}
           </div>
           

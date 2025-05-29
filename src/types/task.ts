@@ -6,6 +6,7 @@ export interface Subtask {
   title: string;
   description: string;
   status: TaskStatus;
+  lastUpdated?: string;
 }
 
 export interface Task {
@@ -18,6 +19,7 @@ export interface Task {
   dependencies: number[];
   status: TaskStatus;
   subtasks: Subtask[];
+  lastUpdated?: string;
 }
 
 export interface TaskData {
