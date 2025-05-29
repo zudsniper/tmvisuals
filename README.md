@@ -30,6 +30,7 @@ This will automatically build and start the visualizer at `http://localhost:3001
 ![front page of app](image.png)
 ![dark mode graph view](image-1.png)
 ![graph view showing moved tasks & the task sidebar](image-2.png)
+![dark mode graph view with live mode](image-3.png)
 
 ## Requirements
 
