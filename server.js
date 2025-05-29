@@ -23,11 +23,19 @@ const fileWatchers = new Map();
 
 // Serve static files from the dist directory when built
 const distPath = path.join(__dirname, 'dist');
+const publicPath = path.join(__dirname, 'public');
+
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));
   console.log('✅ Serving built application from dist/');
 } else {
   console.warn('⚠️  No dist/ directory found. Run "npm run build" first.');
+}
+
+// Always serve public assets (favicons, etc.) even in development
+if (fs.existsSync(publicPath)) {
+  app.use(express.static(publicPath));
+  console.log('✅ Serving public assets from public/');
 }
 
 // Health check endpoint

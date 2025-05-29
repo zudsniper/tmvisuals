@@ -4,3 +4,4 @@ node_modules
 
 tasks/
 scripts/prd.txt
+dev.log
