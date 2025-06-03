@@ -1,8 +1,11 @@
 import { create } from 'zustand';
+import React from 'react';
 import { Task, TaskNode, TaskEdge } from '../types/task';
 import { Viewport } from 'reactflow';
+import { ForceDirectedLayout, DEFAULT_FORCE_CONFIG, ForceLayoutConfig } from '../utils/forceLayout';
+import { ViewportManager, CameraController, TaskStatusManager } from '../utils/viewportManager';
 
-export type LayoutMode = 'grid' | 'graph';
+export type LayoutMode = 'grid' | 'graph' | 'force';
 export type ThemeMode = 'light' | 'dark' | 'system';
 
 interface TaskStore {
@@ -26,6 +29,17 @@ interface TaskStore {
   focusOnActiveTask: boolean; // New setting to focus on active task instead of remembering viewport
   dynamicLayout: boolean; // New setting for dynamic layout based on active task changes
   currentActiveTaskId: number | null; // Track current active task for dynamic layout
+  
+  // Force-directed layout system
+  forceLayout: ForceDirectedLayout | null;
+  isSimulationRunning: boolean;
+  
+  // Viewport management system
+  viewportManager: ViewportManager;
+  cameraController: CameraController;
+  taskStatusManager: TaskStatusManager;
+  autoFocusOnActiveTask: boolean; // Control automatic viewport centering
+  focusTransitionDuration: number; // Duration for focus transitions
   
   // Live updates
   isLiveUpdateEnabled: boolean;
@@ -51,6 +65,13 @@ interface TaskStore {
   setProjectName: (name: string | null) => void;
   setFocusOnActiveTask: (focus: boolean) => void;
   setDynamicLayout: (dynamic: boolean) => void;
+  
+  // Force layout actions
+  initializeForceLayout: () => void;
+  updateForceLayout: (config?: Partial<ForceLayoutConfig>) => void;
+  startForceSimulation: () => void;
+  stopForceSimulation: () => void;
+  setActiveTaskFocus: (taskId: number | null) => void;
   
   // Live update actions
   enableLiveUpdates: () => void;
@@ -320,13 +341,52 @@ function calculateGraphLayout(tasks: Task[], customPositions: Map<string, { x: n
   return nodes;
 }
 
+// Force-directed graph layout using physics simulation
+function calculateForceDirectedLayout(tasks: Task[], customPositions: Map<string, { x: number; y: number }>, forceLayout: ForceDirectedLayout | null, activeTaskId: number | null = null): TaskNode[] {
+  const nodes: TaskNode[] = [];
+  
+  // If force layout is not initialized or no tasks, fall back to static layout
+  if (!forceLayout || tasks.length === 0) {
+    return calculateGraphLayout(tasks, customPositions, false, activeTaskId);
+  }
+  
+  // Use positions from force simulation or fall back to custom positions
+  tasks.forEach(task => {
+    const nodeId = `task-${task.id}`;
+    
+    // Try to get position from custom positions (updated by force simulation)
+    const position = customPositions.get(nodeId) || { 
+      x: Math.random() * 800 + 200, // Random initial position if no data
+      y: Math.random() * 600 + 150 
+    };
+    
+    nodes.push({
+      id: nodeId,
+      type: 'task',
+      position,
+      data: { task, isCollapsed: false }
+    });
+  });
+  
+  return nodes;
+}
+
 // Calculate positions based on layout mode
-function calculateNodePositions(tasks: Task[], layoutMode: LayoutMode, customPositions: Map<string, { x: number; y: number }>, dynamicLayout: boolean = false, activeTaskId: number | null = null): TaskNode[] {
+function calculateNodePositions(tasks: Task[], layoutMode: LayoutMode, customPositions: Map<string, { x: number; y: number }>, dynamicLayout?: boolean, activeTaskId?: number | null): TaskNode[];
+function calculateNodePositions(tasks: Task[], layoutMode: LayoutMode, customPositions: Map<string, { x: number; y: number }>, dynamicLayout: boolean, activeTaskId: number | null, forceLayout: ForceDirectedLayout | null): TaskNode[];
+function calculateNodePositions(tasks: Task[], layoutMode: LayoutMode, customPositions: Map<string, { x: number; y: number }>, dynamicLayout: boolean = false, activeTaskId: number | null = null, forceLayout?: ForceDirectedLayout | null): TaskNode[] {
+  // If force layout is provided and layout mode is graph, use force-directed layout
+  if (forceLayout && layoutMode === 'graph') {
+    return calculateForceDirectedLayout(tasks, customPositions, forceLayout, activeTaskId);
+  }
+  
   switch (layoutMode) {
     case 'grid':
       return calculateGridLayout(tasks, customPositions);
     case 'graph':
       return calculateGraphLayout(tasks, customPositions, dynamicLayout, activeTaskId);
+    case 'force':
+      return calculateForceDirectedLayout(tasks, customPositions, forceLayout || null, activeTaskId);
     default:
       return calculateGridLayout(tasks, customPositions);
   }
@@ -518,73 +578,208 @@ const extractProjectName = (projectPath: string | null): string => {
   return 'TaskMaster Visualizer';
 };
 
+// Enhanced edge routing algorithms with collision avoidance and smart path selection
+// Interfaces for future advanced routing features
+// interface EdgeRouting would go here when implementing advanced pathfinding
+
+// Node spatial index for efficient collision detection
+class SpatialIndex {
+  private nodePositions: Map<string, { x: number; y: number; width: number; height: number }> = new Map();
+  
+  addNode(id: string, x: number, y: number, width: number = 280, height: number = 120) {
+    this.nodePositions.set(id, { x, y, width, height });
+  }
+  
+  getNodeBounds(id: string) {
+    return this.nodePositions.get(id);
+  }
+  
+  checkIntersection(x1: number, y1: number, x2: number, y2: number): boolean {
+    for (const [_nodeId, bounds] of this.nodePositions) {
+      if (this.lineIntersectsRect(x1, y1, x2, y2, bounds)) {
+        return true;
+      }
+    }
+    return false;
+  }
+  
+  private lineIntersectsRect(x1: number, y1: number, x2: number, y2: number, 
+                           rect: { x: number; y: number; width: number; height: number }): boolean {
+    const left = rect.x;
+    const right = rect.x + rect.width;
+    const top = rect.y;
+    const bottom = rect.y + rect.height;
+    
+    // Check if line intersects any of the rectangle's edges
+    return this.lineIntersectsLine(x1, y1, x2, y2, left, top, right, top) ||
+           this.lineIntersectsLine(x1, y1, x2, y2, right, top, right, bottom) ||
+           this.lineIntersectsLine(x1, y1, x2, y2, right, bottom, left, bottom) ||
+           this.lineIntersectsLine(x1, y1, x2, y2, left, bottom, left, top);
+  }
+  
+  private lineIntersectsLine(x1: number, y1: number, x2: number, y2: number,
+                           x3: number, y3: number, x4: number, y4: number): boolean {
+    const denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+    if (Math.abs(denom) < 1e-10) return false;
+    
+    const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
+    const u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denom;
+    
+    return t >= 0 && t <= 1 && u >= 0 && u <= 1;
+  }
+}
+
+// Edge bundling for multiple connections between same nodes
+function bundleEdges(edges: { source: string; target: string; data: any }[]): 
+  { source: string; target: string; data: any; offset: number }[] {
+  const bundles = new Map<string, { source: string; target: string; data: any }[]>();
+  
+  edges.forEach(edge => {
+    const key = `${edge.source}-${edge.target}`;
+    if (!bundles.has(key)) {
+      bundles.set(key, []);
+    }
+    bundles.get(key)!.push(edge);
+  });
+  
+  const result: { source: string; target: string; data: any; offset: number }[] = [];
+  
+  bundles.forEach(bundleEdges => {
+    if (bundleEdges.length === 1) {
+      result.push({ ...bundleEdges[0], offset: 0 });
+    } else {
+      bundleEdges.forEach((edge, index) => {
+        const totalEdges = bundleEdges.length;
+        const offset = (index - (totalEdges - 1) / 2) * 20; // 20px spacing between bundled edges
+        result.push({ ...edge, offset });
+      });
+    }
+  });
+  
+  return result;
+}
+
+// Smart routing algorithm to avoid node intersections (for future enhancement)
+// function calculateSmartRoute would go here when we implement advanced pathfinding
+
 function createEdges(tasks: Task[], layoutMode: LayoutMode): TaskEdge[] {
-  if (layoutMode !== 'graph') {
-    return []; // No edges in grid mode
+  if (layoutMode !== 'graph' && layoutMode !== 'force') {
+    return []; // No edges in grid mode, but show edges in both graph and force modes
   }
   
   const edges: TaskEdge[] = [];
-  const edgeConnections = new Map<string, number>(); // Track multiple edges between same nodes
+  const spatialIndex = new SpatialIndex();
   
   // Create task lookup map for quick access
   const taskMap = new Map<number, Task>();
   tasks.forEach(task => taskMap.set(task.id, task));
   
+  // Build spatial index from current node positions (simplified - in real app would get from ReactFlow)
   tasks.forEach(task => {
-    task.dependencies.forEach(depId => {
-      const edgeKey = `${depId}-${task.id}`;
-      const existingCount = edgeConnections.get(edgeKey) || 0;
-      edgeConnections.set(edgeKey, existingCount + 1);
-      
-      // Create a single curved edge that represents all dependencies between these nodes
-      if (existingCount === 0) {
-        const sourceTask = taskMap.get(depId);
-        const targetTask = task;
-        
-        // Determine if this edge should be animated based on task statuses
-        const isSourceActive = sourceTask?.status === 'in-progress' || 
-          sourceTask?.subtasks.some(st => st.status === 'in-progress');
-        const isTargetActive = targetTask.status === 'in-progress' || 
-          targetTask.subtasks.some(st => st.status === 'in-progress');
-        const shouldAnimate = isSourceActive || isTargetActive;
-        
-        // Determine edge color and style based on task statuses
-        let edgeColor = '#64748b'; // Default gray
-        let edgeOpacity = 0.6;
-        let strokeWidth = 2;
-        let strokeDasharray: string | undefined = undefined;
-        
-        if (isTargetActive) {
-          edgeColor = '#3b82f6'; // Blue for incoming to active tasks
-          edgeOpacity = 0.8;
-          strokeWidth = 3;
-        } else if (isSourceActive) {
-          edgeColor = '#10b981'; // Green for outgoing from active tasks
-          edgeOpacity = 0.7;
-          strokeWidth = 2.5;
-        }
-        
-        // Special case: if target is pending but source is done, show as completed dependency
-        if (sourceTask?.status === 'done' && targetTask.status === 'pending') {
-          edgeColor = '#22c55e'; // Green for completed dependencies
-          edgeOpacity = 0.6;
-          strokeDasharray = '5,5'; // Dashed line for completed dependencies
-        }
-        
-        edges.push({
-          id: `edge-${depId}-${task.id}`,
+    // Note: In real implementation, we'd get actual node positions from ReactFlow
+    // For now, we'll use a simplified approach
+    spatialIndex.addNode(`task-${task.id}`, task.id * 300, task.id * 150);
+  });
+  
+  // Collect all edge relationships for bundling
+  const edgeRelationships: { source: string; target: string; data: {
+    sourceTask: Task;
+    targetTask: Task;
+    relationshipType: 'dependency' | 'subtask' | 'priority';
+    priority: number;
+  }}[] = [];
+  
+  tasks.forEach(task => {
+    task.dependencies.forEach((depId, index) => {
+      const sourceTask = taskMap.get(depId);
+      if (sourceTask) {
+        edgeRelationships.push({
           source: `task-${depId}`,
           target: `task-${task.id}`,
-          type: 'smoothstep', // Use smooth curved edges
-          animated: shouldAnimate, // Animate edges connected to active tasks
-          style: {
-            stroke: edgeColor,
-            strokeWidth,
-            strokeOpacity: edgeOpacity,
-            strokeDasharray
+          data: {
+            sourceTask,
+            targetTask: task,
+            relationshipType: 'dependency',
+            priority: index
           }
         });
       }
+    });
+  });
+  
+  // Bundle edges to prevent overlap
+  const bundledEdges = bundleEdges(edgeRelationships);
+  
+  bundledEdges.forEach(({ source, target, data, offset }) => {
+    const { sourceTask, targetTask } = data;
+    
+    // Determine if this edge should be animated based on task statuses
+    const isSourceActive = sourceTask.status === 'in-progress' || 
+      sourceTask.subtasks.some((st: any) => st.status === 'in-progress');
+    const isTargetActive = targetTask.status === 'in-progress' || 
+      targetTask.subtasks.some((st: any) => st.status === 'in-progress');
+    const shouldAnimate = isSourceActive || isTargetActive;
+    
+    // Enhanced edge styling based on relationship and status
+    let edgeColor = '#64748b'; // Default gray
+    let edgeOpacity = 0.6;
+    let strokeWidth = 2;
+    let strokeDasharray: string | undefined = undefined;
+    let edgeType: 'default' | 'straight' | 'smoothstep' | 'bezier' | 'dependency' = 'smoothstep';
+    
+    // Style based on task status relationships
+    if (isTargetActive) {
+      edgeColor = '#3b82f6'; // Blue for incoming to active tasks
+      edgeOpacity = 0.9;
+      strokeWidth = 3;
+      edgeType = 'smoothstep';
+    } else if (isSourceActive) {
+      edgeColor = '#10b981'; // Green for outgoing from active tasks
+      edgeOpacity = 0.8;
+      strokeWidth = 2.5;
+      edgeType = 'smoothstep';
+    } else if (sourceTask.status === 'done' && targetTask.status === 'pending') {
+      edgeColor = '#22c55e'; // Green for completed dependencies
+      edgeOpacity = 0.7;
+      strokeDasharray = '8,4'; // Dashed line for completed dependencies
+      edgeType = 'bezier';
+    } else if (sourceTask.status === 'done' && targetTask.status === 'done') {
+      edgeColor = '#94a3b8'; // Light gray for completed chains
+      edgeOpacity = 0.4;
+      strokeWidth = 1.5;
+      edgeType = 'straight';
+    }
+    
+    // Priority-based styling
+    if (targetTask.priority === 'high') {
+      edgeColor = '#ef4444'; // Red for high priority connections
+      strokeWidth = Math.max(strokeWidth, 2.5);
+    } else if (targetTask.priority === 'low') {
+      edgeOpacity = Math.min(edgeOpacity, 0.5);
+      strokeWidth = Math.max(strokeWidth - 0.5, 1);
+    }
+    
+    // Apply offset for bundled edges
+    const style: React.CSSProperties = {
+      stroke: edgeColor,
+      strokeWidth,
+      strokeOpacity: edgeOpacity,
+      strokeDasharray
+    };
+    
+    if (offset !== 0) {
+      // For bundled edges, slightly adjust the path
+      style.transform = `translateY(${offset}px)`;
+      edgeOpacity = Math.max(0.3, edgeOpacity - Math.abs(offset) * 0.01);
+    }
+    
+    edges.push({
+      id: `edge-${sourceTask.id}-${targetTask.id}-${Math.abs(offset)}`,
+      source,
+      target,
+      type: edgeType,
+      animated: shouldAnimate,
+      style
     });
   });
   
@@ -628,6 +823,17 @@ export const useTaskStore = create<TaskStore>((set, get) => {
     dynamicLayout: loadDynamicLayoutFromStorage(), // Load from storage instead of defaulting to false
     currentActiveTaskId: null,
     
+    // Force-directed layout system
+    forceLayout: null,
+    isSimulationRunning: false,
+    
+    // Viewport management system
+    viewportManager: new ViewportManager(),
+    cameraController: new CameraController(),
+    taskStatusManager: new TaskStatusManager(),
+    autoFocusOnActiveTask: true, // Default to enabled
+    focusTransitionDuration: 1000, // 1 second transitions
+    
     // Live updates
     isLiveUpdateEnabled: false,
     sseConnection: null,
@@ -636,7 +842,7 @@ export const useTaskStore = create<TaskStore>((set, get) => {
     loadTasks: (tasks) => {
       console.log('loadTasks called with:', tasks);
       console.log('Number of tasks to load:', tasks?.length);
-      const { layoutMode, customPositions, dynamicLayout } = get();
+      const { layoutMode, customPositions, dynamicLayout, forceLayout } = get();
       
       // Track active task for dynamic layout
       const activeTask = tasks.find(t => 
@@ -644,7 +850,7 @@ export const useTaskStore = create<TaskStore>((set, get) => {
       );
       const activeTaskId = activeTask?.id || null;
       
-      const nodes = calculateNodePositions(tasks, layoutMode, customPositions, dynamicLayout, activeTaskId);
+      const nodes = calculateNodePositions(tasks, layoutMode, customPositions, dynamicLayout, activeTaskId, forceLayout);
       const edges = createEdges(tasks, layoutMode);
       console.log('Generated nodes:', nodes.length);
       console.log('Generated edges:', edges.length);
@@ -665,7 +871,7 @@ export const useTaskStore = create<TaskStore>((set, get) => {
         const tasksData = await response.json();
         const tasks: Task[] = tasksData.tasks || [];
         
-        const { layoutMode, customPositions, dynamicLayout } = get();
+        const { layoutMode, customPositions, dynamicLayout, forceLayout } = get();
         
         // Track active task for dynamic layout
         const activeTask = tasks.find(t => 
@@ -673,7 +879,7 @@ export const useTaskStore = create<TaskStore>((set, get) => {
         );
         const activeTaskId = activeTask?.id || null;
         
-        const nodes = calculateNodePositions(tasks, layoutMode, customPositions, dynamicLayout, activeTaskId);
+        const nodes = calculateNodePositions(tasks, layoutMode, customPositions, dynamicLayout, activeTaskId, forceLayout);
         const edges = createEdges(tasks, layoutMode);
         
         // Extract project name if not already set
@@ -721,8 +927,58 @@ export const useTaskStore = create<TaskStore>((set, get) => {
     },
     
     setLayoutMode: (mode) => {
-      const { tasks, customPositions, dynamicLayout, currentActiveTaskId } = get();
-      const nodes = calculateNodePositions(tasks, mode, customPositions, dynamicLayout, currentActiveTaskId);
+      const state = get();
+      const { tasks, customPositions, dynamicLayout, currentActiveTaskId, forceLayout } = state;
+      
+      // Initialize force layout if switching to force mode and not already initialized
+      if (mode === 'force' && !forceLayout) {
+        // First initialize the force layout
+        const config: ForceLayoutConfig = {
+          ...DEFAULT_FORCE_CONFIG,
+          width: typeof window !== 'undefined' ? window.innerWidth : 1200,
+          height: typeof window !== 'undefined' ? window.innerHeight : 800,
+          activeTaskId: currentActiveTaskId,
+        };
+        
+        const newForceLayout = new ForceDirectedLayout(config);
+        
+        // Set up simulation event handlers
+        newForceLayout.onTickUpdate((nodes) => {
+          const { customPositions, tasks, layoutMode } = get();
+          const newPositions = new Map(customPositions);
+          
+          nodes.forEach(node => {
+            if (node.x !== undefined && node.y !== undefined) {
+              newPositions.set(node.id, { x: node.x, y: node.y });
+            }
+          });
+          
+          // Update positions and recalculate nodes if we're in force mode
+          if (layoutMode === 'force') {
+            const updatedNodes = calculateNodePositions(tasks, 'force', newPositions, dynamicLayout, currentActiveTaskId, newForceLayout);
+            set({ customPositions: newPositions, nodes: updatedNodes });
+          } else {
+            set({ customPositions: newPositions });
+          }
+        });
+        
+        newForceLayout.onSimulationEnd(() => {
+          set({ isSimulationRunning: false });
+        });
+        
+        // Set the new force layout and start simulation
+        set({ forceLayout: newForceLayout });
+        
+        // Optimize for large datasets
+        newForceLayout.optimizeForLargeDataset(tasks.length);
+        
+        // Start the simulation
+        newForceLayout.setData(tasks, customPositions);
+        newForceLayout.start();
+        set({ isSimulationRunning: true });
+      }
+      
+      const nodes = calculateNodePositions(tasks, mode, customPositions, dynamicLayout, currentActiveTaskId, mode === 'force' ? (forceLayout || get().forceLayout) : forceLayout);
       const edges = createEdges(tasks, mode);
       set({ layoutMode: mode, nodes, edges });
     },
@@ -748,8 +1004,8 @@ export const useTaskStore = create<TaskStore>((set, get) => {
           : node
       );
       
-      if (state.dynamicLayout && state.layoutMode === 'graph' && activeTaskChanged) {
-        updatedNodes = calculateNodePositions(updatedTasks, 'graph', state.customPositions, true, newActiveTaskId);
+      if (state.dynamicLayout && (state.layoutMode === 'graph' || state.layoutMode === 'force') && activeTaskChanged) {
+        updatedNodes = calculateNodePositions(updatedTasks, state.layoutMode, state.customPositions, true, newActiveTaskId, state.forceLayout);
       }
       
       return {
@@ -860,16 +1116,104 @@ export const useTaskStore = create<TaskStore>((set, get) => {
       saveDynamicLayoutToStorage(dynamic); // Persist the setting
       
       // If enabling dynamic layout, recalculate layout with current active task
-      if (dynamic && state.layoutMode === 'graph') {
+      if (dynamic && (state.layoutMode === 'graph' || state.layoutMode === 'force')) {
         const activeTask = state.tasks.find(t => 
           t.status === 'in-progress' || t.subtasks.some(st => st.status === 'in-progress')
         );
         const activeTaskId = activeTask?.id || null;
         
-        const nodes = calculateNodePositions(state.tasks, 'graph', state.customPositions, dynamic, activeTaskId);
-        const edges = createEdges(state.tasks, 'graph');
+        const nodes = calculateNodePositions(state.tasks, state.layoutMode, state.customPositions, dynamic, activeTaskId, state.forceLayout);
+        const edges = createEdges(state.tasks, state.layoutMode);
         set({ nodes, edges, currentActiveTaskId: activeTaskId });
       }
+    },
+    
+    // Force layout actions
+    initializeForceLayout: () => {
+      const { tasks } = get();
+      if (tasks.length === 0) return;
+      
+      const config: ForceLayoutConfig = {
+        ...DEFAULT_FORCE_CONFIG,
+        width: typeof window !== 'undefined' ? window.innerWidth : 1200,
+        height: typeof window !== 'undefined' ? window.innerHeight : 800,
+      };
+      
+      const forceLayout = new ForceDirectedLayout(config);
+      
+      // Set up simulation event handlers
+      forceLayout.onTickUpdate((nodes) => {
+        const { customPositions, tasks, layoutMode, dynamicLayout, currentActiveTaskId } = get();
+        const newPositions = new Map(customPositions);
+        
+        nodes.forEach(node => {
+          if (node.x !== undefined && node.y !== undefined) {
+            newPositions.set(node.id, { x: node.x, y: node.y });
+          }
+        });
+        
+        // Update positions and recalculate nodes if we're in force mode
+        if (layoutMode === 'force') {
+          const updatedNodes = calculateNodePositions(tasks, 'force', newPositions, dynamicLayout, currentActiveTaskId, forceLayout);
+          set({ customPositions: newPositions, nodes: updatedNodes });
+        } else {
+          set({ customPositions: newPositions });
+        }
+      });
+      
+      forceLayout.onSimulationEnd(() => {
+        set({ isSimulationRunning: false });
+      });
+      
+      set({ forceLayout, isSimulationRunning: false });
+      
+      // Optimize for large datasets
+      forceLayout.optimizeForLargeDataset(tasks.length);
+    },
+    
+    updateForceLayout: (config) => {
+      const { forceLayout } = get();
+      if (!forceLayout) return;
+      
+      if (config) {
+        // Use smooth transition for significant layout changes
+        const significantChanges = config.linkDistance || config.chargeStrength || config.collisionRadius;
+        
+        if (significantChanges) {
+          // Use the new smooth transition method for layout parameter changes
+          forceLayout.transitionToNewLayout(config, 500);
+        } else {
+          // Direct update for minor changes
+          forceLayout.updateConfig(config);
+        }
+      }
+    },
+    
+    startForceSimulation: () => {
+      const { forceLayout, tasks, customPositions } = get();
+      if (!forceLayout || tasks.length === 0) return;
+      
+      // Set data in the force layout
+      forceLayout.setData(tasks, customPositions);
+      forceLayout.start();
+      set({ isSimulationRunning: true });
+    },
+    
+    stopForceSimulation: () => {
+      const { forceLayout } = get();
+      if (!forceLayout) return;
+      
+      forceLayout.stop();
+      set({ isSimulationRunning: false });
+    },
+    
+    setActiveTaskFocus: (taskId) => {
+      const { forceLayout } = get();
+      if (!forceLayout) return;
+      
+      const config = { activeTaskId: taskId };
+      forceLayout.updateConfig(config);
+      set({ currentActiveTaskId: taskId });
     },
     
     // Live update methods

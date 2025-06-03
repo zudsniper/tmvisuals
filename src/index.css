@@ -19,11 +19,38 @@ body {
 
 /* ReactFlow improvements for smoother zoom */
 .react-flow__viewport {
-  transition: transform 0.1s ease-out;
+  transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .react-flow__node {
-  transition: opacity 0.2s ease-in-out;
+  transition: 
+    opacity 0.2s ease-in-out,
+    transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Enhanced node positioning transitions */
+.react-flow__node.react-flow__node-task {
+  transition: 
+    opacity 0.2s ease-in-out,
+    transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+    box-shadow 0.2s ease-in-out;
+}
+
+/* Smooth position updates for force-directed layout */
+.react-flow__node[data-layout="force"] {
+  transition: 
+    transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* Reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+  .react-flow__viewport {
+    transition: none;
+  }
+  
+  .react-flow__node {
+    transition: opacity 0.2s ease-in-out;
+  }
 }
 
 /* Custom scrollbar for better UX */

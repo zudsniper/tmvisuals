@@ -10,21 +10,25 @@ import ReactFlow, {
   Edge,
   BackgroundVariant,
   ReactFlowProvider,
-  Viewport
+  Viewport,
+  useReactFlow
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { TaskNode } from './components/TaskNode';
+import { TaskNode as TaskNodeComponent } from './components/TaskNode';
+import { TaskNode } from './types/task';
 import { TaskDetails } from './components/TaskDetails';
 import { Settings } from './components/Settings';
 import { SearchBar } from './components/SearchBar';
 import { Legend } from './components/Legend';
 import { FileBrowser } from './components/FileBrowser';
 import { useTaskStore } from './store/taskStore';
-import { Settings as SettingsIcon, Grid3X3, GitBranch, FolderOpen, Sun, Moon, Monitor, Edit3 } from 'lucide-react';
+import { Settings as SettingsIcon, Grid3X3, Network, FolderOpen, Sun, Moon, Monitor, Edit3 } from 'lucide-react';
 
-const nodeTypes = { task: TaskNode };
+const nodeTypes = { task: TaskNodeComponent };
 
+// Inner component that has access to ReactFlow instance
 function Flow() {
+  const reactFlowInstance = useReactFlow();
   const { 
     tasks,
     nodes, 
@@ -56,14 +60,86 @@ function Flow() {
     enableLiveUpdates,
     disableLiveUpdates,
     // Auto-focus setting
-    focusOnActiveTask
+    focusOnActiveTask,
+    // Viewport management system
+    viewportManager,
+    cameraController,
+    taskStatusManager,
+    autoFocusOnActiveTask,
+    focusTransitionDuration,
+    currentActiveTaskId
   } = useTaskStore();
+  
   const [flowNodes, setNodes, onNodesChange] = useNodesState(nodes);
   const [flowEdges, setEdges, onEdgesChange] = useEdgesState(edges);
   const [showSettings, setShowSettings] = useState(false);
   const [showFileBrowser, setShowFileBrowser] = useState(false);
   const [isEditingProjectName, setIsEditingProjectName] = useState(false);
   const [editingProjectName, setEditingProjectName] = useState('');
+
+  // Set up viewport manager with ReactFlow instance
+  useEffect(() => {
+    if (reactFlowInstance) {
+      cameraController.setReactFlowInstance(reactFlowInstance);
+    }
+  }, [reactFlowInstance, cameraController]);
+
+  // Active task detection and viewport management
+  useEffect(() => {
+    if (!autoFocusOnActiveTask || flowNodes.length === 0) return;
+
+    // Find the currently active task
+    const activeTask = tasks.find(task => task.status === 'in-progress');
+    const activeTaskId = activeTask?.id || null;
+
+    // Check if active task has changed
+    if (activeTaskId !== currentActiveTaskId) {
+      // Update the tracked active task
+      useTaskStore.getState().setActiveTaskFocus(activeTaskId);
+      
+      // Notify task status manager about all tasks
+      if (activeTaskId) {
+        taskStatusManager.updateActiveTask(tasks);
+      }
+
+      // If there's an active task, focus the viewport on it
+      if (activeTaskId && activeTask) {
+        // Convert flowNodes to TaskNode[] format
+        const taskNodes: TaskNode[] = flowNodes
+          .filter(node => node.type === 'task')
+          .map(node => ({
+            id: node.id,
+            type: 'task' as const,
+            position: node.position,
+            data: node.data
+          }));
+        
+        const targetViewport = viewportManager.calculateOptimalViewport(
+          taskNodes,
+          activeTaskId,
+          reactFlowInstance?.getViewport()
+        );
+
+        if (targetViewport) {
+          cameraController.transitionToViewport(
+            targetViewport,
+            focusTransitionDuration
+          );
+        }
+      }
+    }
+  }, [flowNodes, tasks, autoFocusOnActiveTask, currentActiveTaskId, focusTransitionDuration, 
+      reactFlowInstance, viewportManager, cameraController, taskStatusManager]);
+
+  // Subscribe to task status changes
+  useEffect(() => {
+    const unsubscribe = taskStatusManager.subscribe((activeTask, previousTask) => {
+      console.log(`Active task changed from ${previousTask?.id} to: ${activeTask?.id}`);
+      // Additional logic for task change events can be added here
+    });
+
+    return unsubscribe;
+  }, [taskStatusManager]);
 
   // Enhanced visual highlighting for active tasks - NO viewport manipulation
   useEffect(() => {
@@ -370,8 +446,25 @@ function Flow() {
                     : (isDarkMode ? 'text-gray-300 hover:text-white' : 'text-gray-600 hover:text-gray-800')
                 }`}
               >
-                <GitBranch className="w-4 h-4" />
+                <Network className="w-4 h-4" />
                 Graph
+              </button>
+              <button
+                onClick={() => setLayoutMode('force')}
+                className={`px-3 py-1 text-sm rounded flex items-center gap-1 transition-colors ${
+                  layoutMode === 'force' 
+                    ? (isDarkMode ? 'bg-gray-600 text-white shadow-sm' : 'bg-white text-blue-600 shadow-sm')
+                    : (isDarkMode ? 'text-gray-300 hover:text-white' : 'text-gray-600 hover:text-gray-800')
+                }`}
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="2"/>
+                  <path d="M12 1v6m0 6v6"/>
+                  <path d="m5.93 5.93 4.24 4.24m5.66 5.66 4.24 4.24"/>
+                  <path d="M1 12h6m6 0h6"/>
+                  <path d="m5.93 18.07 4.24-4.24m5.66-5.66 4.24-4.24"/>
+                </svg>
+                Force
               </button>
             </div>
           </div>
