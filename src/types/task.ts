@@ -23,6 +23,9 @@ export interface Task {
   // Optional properties added by server for tasks loaded from individual files
   filePath?: string;
   fileName?: string;
+  // Context menu and interaction properties
+  isLocked?: boolean;
+  zIndex?: number;
 }
 
 export interface TaskData {
@@ -38,6 +41,7 @@ export interface TaskNode {
     task: Task;
     isCollapsed: boolean;
   };
+  zIndex?: number;
 }
 
 export interface TaskEdge {

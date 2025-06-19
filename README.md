@@ -121,6 +121,119 @@ The visualizer remembers your preferences:
 - Editor choice (VSCode/Cursor)
 - Custom node positions
 
+## Troubleshooting
+
+### "No Tasks Found" Error
+
+If you see the "No Tasks Found" message, follow these steps:
+
+#### 1. Check Project Structure
+Ensure your project has this structure:
+```
+your-project/
+├── tasks/
+│   ├── tasks.json     # Primary format
+│   │                  # OR
+│   ├── task_001.txt   # Individual files
+│   ├── task_002.txt
+│   └── ...
+└── other project files
+```
+
+#### 2. Quick Setup Options
+
+When no tasks are found, the visualizer provides several options:
+
+- **Create Sample Tasks**: Automatically generates example tasks in your project
+- **Download Template**: Get a `tasks.json` template to customize
+- **Select Different Folder**: Choose a different project directory
+- **View Documentation**: Access this README and setup guides
+
+#### 3. Manual Setup
+
+Create a `tasks/tasks.json` file with this structure:
+
+```json
+{
+  "tasks": [
+    {
+      "id": 1,
+      "title": "Setup Project",
+      "description": "Initialize the project structure",
+      "status": "done",
+      "priority": "high",
+      "dependencies": [],
+      "subtasks": [
+        { "id": 1, "title": "Create directory", "status": "done" },
+        { "id": 2, "title": "Initialize files", "status": "done" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Development",
+      "description": "Main development tasks",
+      "status": "in-progress",
+      "priority": "medium",
+      "dependencies": [1],
+      "subtasks": [
+        { "id": 1, "title": "Plan features", "status": "done" },
+        { "id": 2, "title": "Implement core", "status": "in-progress" },
+        { "id": 3, "title": "Testing", "status": "pending" }
+      ]
+    }
+  ]
+}
+```
+
+### Common Issues
+
+#### Permission Errors
+- **Windows**: Run as Administrator if needed
+- **macOS/Linux**: Check file permissions with `ls -la`
+- **Solution**: Ensure read access to the project directory
+
+#### Invalid JSON Format
+- **Error**: "Invalid task file format"
+- **Solution**: Validate your JSON at [jsonlint.com](https://jsonlint.com)
+- **Tip**: Use the "Download Template" button for a valid starting point
+
+#### Server Connection Issues
+- **Error**: "Connection error"
+- **Check**: Is the server running on the correct port?
+- **Solution**: Restart with `npx tmvisuals --port 3001`
+
+#### Live Updates Not Working
+- **Check**: File watcher permissions
+- **Solution**: Refresh manually or restart the application
+- **Note**: Live updates require a valid `tasks/` directory
+
+### Getting Help
+
+If you're still having issues:
+
+1. **Use the Feedback System**: Click "Having trouble? Send feedback" in the app
+2. **Check TaskMaster Documentation**: [TaskMaster Repository](https://github.com/eyaltoledano/claude-task-master)
+3. **Open an Issue**: [Create an issue](https://github.com/zudsniper/tmvisuals/issues) with:
+   - Your operating system
+   - Node.js version (`node --version`)
+   - Project structure
+   - Error messages
+
+### Task File Formats
+
+#### tasks.json (Recommended)
+Complete task definitions with all features:
+- Dependencies
+- Subtasks
+- Priorities
+- Custom metadata
+
+#### Individual Files
+Alternative format for simple projects:
+- `task_001.txt`: First line is title, rest is description
+- `task_002.md`: Markdown format supported
+- Automatically generates basic task structure
+
 ## API Endpoints
 
 - `GET /api/health` - Health check

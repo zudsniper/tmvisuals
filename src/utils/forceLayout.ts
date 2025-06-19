@@ -115,10 +115,10 @@ export class ForceDirectedLayout {
   private lastFrameTime: number = performance.now();
   private performanceMonitoringInterval: number | null = null;
   private isPerformanceMonitoringEnabled: boolean = false;
-  private emergencyMode: boolean = false;
+  private _emergencyMode: boolean = false;
   private qualityLevel: 'high' | 'medium' | 'low' | 'emergency' = 'high';
   private webWorker: Worker | null = null;
-  private isUsingWebWorker: boolean = false;
+  private _isUsingWebWorker: boolean = false;
   private cpuUsageHistory: number[] = [];
   private memoryUsageHistory: number[] = [];
 
@@ -920,7 +920,7 @@ export class ForceDirectedLayout {
 
   // Task 2.5: Advanced performance optimization methods
   private activateEmergencyMode(nodeCount: number) {
-    this.emergencyMode = true;
+    this._emergencyMode = true;
     this.qualityLevel = 'emergency';
     this.performanceMetrics.activeOptimizations.push('emergency-mode');
 
@@ -1150,7 +1150,7 @@ export class ForceDirectedLayout {
   private enableWebWorkerCalculations() {
     if (!this.webWorker) return;
     
-    this.isUsingWebWorker = true;
+    this._isUsingWebWorker = true;
     this.performanceMetrics.activeOptimizations.push('web-worker-active');
   }
 
@@ -1172,13 +1172,22 @@ export class ForceDirectedLayout {
     if (this.webWorker) {
       this.webWorker.terminate();
       this.webWorker = null;
-      this.isUsingWebWorker = false;
+      this._isUsingWebWorker = false;
     }
   }
 
   // Get performance metrics for monitoring dashboard
   public getPerformanceMetrics(): PerformanceMetrics {
     return { ...this.performanceMetrics };
+  }
+
+  // Get current performance state
+  public isInEmergencyMode(): boolean {
+    return this._emergencyMode;
+  }
+
+  public isUsingWebWorker(): boolean {
+    return this._isUsingWebWorker;
   }
 
   // Manual performance optimization trigger
@@ -1564,9 +1573,9 @@ export class ForceDirectedLayout {
     // Reset performance state
     this.lastFrameTime = performance.now();
     this.isPerformanceMonitoringEnabled = false;
-    this.emergencyMode = false;
+    this._emergencyMode = false;
     this.qualityLevel = 'high';
-    this.isUsingWebWorker = false;
+    this._isUsingWebWorker = false;
     
     // Clear positions and targets
     this.previousPositions.clear();
