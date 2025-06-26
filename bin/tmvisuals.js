@@ -16,21 +16,33 @@ const distPath = path.join(projectRoot, 'dist');
 const packageJsonPath = path.join(projectRoot, 'package.json');
 
 function checkBuildStatus() {
-  if (!fs.existsSync(distPath)) {
-    console.log('📦 Building application for first time...');
-    return false;
+  const isDevelopmentEnv = fs.existsSync(path.join(projectRoot, '.git'));
+
+  if (!fs.existsSync(distPath) || !fs.existsSync(path.join(distPath, 'index.html'))) {
+    if (isDevelopmentEnv) {
+      console.log('📦 Building application (dist missing or incomplete in development mode)...');
+      return false; // Needs build
+    } else {
+      // In a packaged environment, missing dist is a critical issue.
+      // Return a specific marker to indicate this critical state.
+      console.error('❌ Critical: Application distribution is missing or corrupted.');
+      return 'critical_error';
+    }
   }
   
-  // Check if build is newer than source files
-  const distStat = fs.statSync(path.join(distPath, 'index.html'));
-  const packageStat = fs.statSync(packageJsonPath);
-  
-  if (packageStat.mtime > distStat.mtime) {
-    console.log('📦 Rebuilding application (package.json updated)...');
-    return false;
+  // For development environments, check if package.json is newer than the build.
+  // For packaged environments, assume the build is fine if it exists.
+  if (isDevelopmentEnv) {
+    const distStat = fs.statSync(path.join(distPath, 'index.html')); // Known to exist from check above
+    const packageStat = fs.statSync(packageJsonPath);
+
+    if (packageStat.mtime > distStat.mtime) {
+      console.log('📦 Rebuilding application (package.json updated in development mode)...');
+      return false; // Needs build
+    }
   }
   
-  return true;
+  return true; // Build is okay or assumed okay in packaged mode
 }
 
 function buildApp() {
@@ -143,10 +155,17 @@ navigate to your TaskMaster project directory.
     }
     
     // Check if build is needed
-    if (!checkBuildStatus()) {
+    const buildStatus = checkBuildStatus();
+
+    if (buildStatus === 'critical_error') {
+      console.error('❌ Error starting TaskMaster Visualizer: Application files are missing. Please try reinstalling tmvisuals.');
+      process.exit(1);
+    }
+
+    if (buildStatus === false) { // Explicitly false, meaning needs build in dev
       await buildApp();
-    } else {
-      console.log('✅ Application already built\n');
+    } else { // True, meaning build is okay or assumed okay in packaged mode
+      console.log('✅ Application already built or in packaged mode (no build check needed).\n');
     }
     
     // Start the server

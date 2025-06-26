@@ -45,7 +45,6 @@
     "dev:full": "concurrently \"npm run dev\" \"npm run dev:server\"",
     "start": "npm run build && npm run server",
     "start:clean": "lsof -ti:3001 | xargs kill -9 2>/dev/null || true && npm run start",
-    "postinstall": "npm run build",
     "prepare": "npm run build",
     "generate-favicons": "node scripts/generate-favicons.js",
     "test": "echo \"🧪 Tests coming soon!\" && exit 0",

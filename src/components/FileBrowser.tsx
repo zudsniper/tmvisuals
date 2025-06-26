@@ -37,42 +37,77 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ onSelectPath, onClose,
     }
   }, [isOpen]);
 
+  // Helper function to parse errors from fetch responses
+  const parseFetchError = async (response: Response, defaultMessage: string): Promise<string> => {
+    let errorMsg = defaultMessage;
+    try {
+      const errorData = await response.json();
+      if (errorData && errorData.error) {
+        errorMsg = errorData.error;
+      } else {
+        errorMsg = `Error ${response.status}: ${response.statusText || defaultMessage}`;
+      }
+    } catch (jsonParseError) {
+      try {
+        const textError = await response.text();
+        errorMsg = `Server error ${response.status}: ${textError.substring(0, 100)}${textError.length > 100 ? '...' : ''}`;
+      } catch (textParseError) {
+        errorMsg = `${defaultMessage} (Status: ${response.status})`;
+      }
+    }
+    return errorMsg;
+  };
+
   const loadDrives = async () => {
+    setLoading(true);
+    // Don't clear error immediately, only on success or new loadDirectory attempt
     try {
       const response = await fetch('/api/drives');
+      if (!response.ok) {
+        const errorMsg = await parseFetchError(response, 'Failed to load system drives');
+        throw new Error(errorMsg);
+      }
       const data = await response.json();
       setDrives(data.drives || []);
+      setError(null); // Clear error on successful drive load
       
       // Set initial path based on platform
       if (data.drives && data.drives.length > 0) {
         const defaultPath = data.drives.find((d: FileItem) => d.path === '/Users') || data.drives[0];
         setCurrentPath(defaultPath.path);
-        loadDirectory(defaultPath.path);
+        await loadDirectory(defaultPath.path); // loadDirectory will handle its own error display
+      } else {
+        // If no drives, maybe load root or a default, or show a message.
+        // For now, if loadDirectory isn't called, ensure loading is false.
+        setLoading(false);
       }
     } catch (error) {
       console.error('Failed to load drives:', error);
-      setError('Failed to load system drives');
+      setError(error instanceof Error ? error.message : 'An unknown error occurred while loading drives');
+      setLoading(false);
     }
   };
 
   const loadDirectory = async (path: string) => {
     setLoading(true);
-    setError(null);
+    // setError(null); // Don't clear error immediately, only on success.
+    // Error from a previous attempt will persist until this one succeeds.
     
     try {
       const response = await fetch(`/api/browse?dir=${encodeURIComponent(path)}`);
       
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to load directory');
+        const errorMsg = await parseFetchError(response, 'Failed to load directory contents');
+        throw new Error(errorMsg);
       }
       
       const data: BrowseResponse = await response.json();
       setCurrentPath(data.currentPath);
       setItems(data.items);
+      setError(null); // Clear error only on successful directory load
     } catch (error) {
       console.error('Directory load error:', error);
-      setError(error instanceof Error ? error.message : 'Failed to load directory');
+      setError(error instanceof Error ? error.message : 'An unknown error occurred while loading directory');
     } finally {
       setLoading(false);
     }
