@@ -24,18 +24,40 @@ interface FileBrowserProps {
 
 export const FileBrowser: React.FC<FileBrowserProps> = ({ onSelectPath, onClose, isOpen }) => {
   const { isDarkMode } = useTaskStore();
-  const [currentPath, setCurrentPath] = useState<string>('/Users');
+  const [currentPath, setCurrentPath] = useState<string>('/home');
   const [items, setItems] = useState<FileItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [drives, setDrives] = useState<FileItem[]>([]);
 
-  // Load system drives on component mount
+  // Load system drives on component mount and set home directory when available
   useEffect(() => {
     if (isOpen) {
       loadDrives();
     }
   }, [isOpen]);
+
+  // Initialize with home directory if we don't have drives yet
+  useEffect(() => {
+    if (isOpen && drives.length === 0) {
+      // Try to get home directory from server
+      const initializeWithHome = async () => {
+        try {
+          const response = await fetch('/api/drives');
+          if (response.ok) {
+            const data = await response.json();
+            if (data.homeDirectory && currentPath === '/home') {
+              setCurrentPath(data.homeDirectory);
+              await loadDirectory(data.homeDirectory);
+            }
+          }
+        } catch (error) {
+          console.warn('Failed to get home directory for initialization:', error);
+        }
+      };
+      initializeWithHome();
+    }
+  }, [isOpen, drives.length, currentPath]);
 
   // Helper function to parse errors from fetch responses
   const parseFetchError = async (response: Response, defaultMessage: string): Promise<string> => {
@@ -71,11 +93,14 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ onSelectPath, onClose,
       setDrives(data.drives || []);
       setError(null); // Clear error on successful drive load
       
-      // Set initial path based on platform
-      if (data.drives && data.drives.length > 0) {
-        const defaultPath = data.drives.find((d: FileItem) => d.path === '/Users') || data.drives[0];
-        setCurrentPath(defaultPath.path);
-        await loadDirectory(defaultPath.path); // loadDirectory will handle its own error display
+      // Set initial path to home directory if available
+      if (data.homeDirectory) {
+        setCurrentPath(data.homeDirectory);
+        await loadDirectory(data.homeDirectory);
+      } else if (data.drives && data.drives.length > 0) {
+        const defaultPath = data.drives[0].path;
+        setCurrentPath(defaultPath);
+        await loadDirectory(defaultPath);
       } else {
         // If no drives, maybe load root or a default, or show a message.
         // For now, if loadDirectory isn't called, ensure loading is false.

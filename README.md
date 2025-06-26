@@ -121,6 +121,36 @@ The visualizer remembers your preferences:
 - Editor choice (VSCode/Cursor)
 - Custom node positions
 
+### Environment Variables
+
+You can customize ports and other settings using environment variables. Copy `.env.example` to `.env` and modify as needed:
+
+```bash
+# Backend API Server Port (default: 3001)
+PORT=3001
+
+# Frontend Development Server Port (default: 5550) 
+VITE_PORT=5550
+
+# Alternative backend port specification
+API_PORT=3001
+
+# Node Environment
+NODE_ENV=development
+```
+
+Examples:
+```bash
+# Start backend on custom port
+PORT=8080 npm run server
+
+# Start frontend dev server on custom port
+VITE_PORT=3000 npm run dev
+
+# Start both with custom ports
+PORT=8080 VITE_PORT=3000 npm run dev:full
+```
+
 ## API Endpoints
 
 - `GET /api/health` - Health check

@@ -400,11 +400,27 @@ const VIEWPORT_STORAGE_KEY = 'taskmaster-viewport';
 const PROJECT_NAME_STORAGE_KEY = 'taskmaster-project-name';
 const FOCUS_ON_ACTIVE_TASK_KEY = 'taskmaster-focus-on-active-task';
 const DYNAMIC_LAYOUT_STORAGE_KEY = 'taskmaster-dynamic-layout';
+const DEFAULT_START_PATH_KEY = 'taskmaster-default-start-path';
 
 // Dark mode detection
 const getSystemTheme = (): 'light' | 'dark' => {
   if (typeof window === 'undefined') return 'light';
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+};
+
+// Get the user's home directory for the default start path
+const getHomeDirectory = (): string => {
+  if (typeof window === 'undefined') {
+    // Server-side: prioritize HOME environment variable for Linux
+    return process.env.HOME || '/';
+  }
+  // Client-side: Check for saved custom start path first
+  const savedPath = localStorage.getItem(DEFAULT_START_PATH_KEY);
+  if (savedPath && savedPath.trim()) {
+    return savedPath;
+  }
+  // Fallback to root for Linux systems
+  return '/';
 };
 
 const loadProjectPathFromStorage = (): string | null => {
@@ -809,7 +825,7 @@ export const useTaskStore = create<TaskStore>((set, get) => {
     editorPreference: 'cursor',
     searchQuery: '',
     layoutMode: 'grid',
-    projectPath: loadProjectPathFromStorage(),
+    projectPath: loadProjectPathFromStorage() || getHomeDirectory(),
     isLoading: false,
     error: null,
     

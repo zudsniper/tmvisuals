@@ -379,6 +379,7 @@ app.get('/api/tasks', async (req, res) => {
 app.get('/api/drives', async (req, res) => {
   try {
     const platform = process.platform;
+    const homeDir = require('os').homedir();
     
     if (platform === 'win32') {
       // Windows: Get available drives
@@ -396,15 +397,34 @@ app.get('/api/drives', async (req, res) => {
           // Drive not available
         }
       }
-      res.json({ drives });
+      // Add user home directory
+      if (homeDir) {
+        drives.unshift({
+          name: 'Home',
+          path: homeDir,
+          isDirectory: true
+        });
+      }
+      res.json({ drives, homeDirectory: homeDir });
     } else {
-      // Unix-like systems: Start from root
+      // Unix-like systems: Start from root and user home
+      const drives = [
+        { name: '/', path: '/', isDirectory: true },
+        { name: 'home', path: '/home', isDirectory: true }
+      ];
+      
+      // Add user home directory at the beginning for easy access
+      if (homeDir) {
+        drives.unshift({
+          name: 'Home',
+          path: homeDir,
+          isDirectory: true
+        });
+      }
+      
       res.json({
-        drives: [
-          { name: '/', path: '/', isDirectory: true },
-          { name: 'Users', path: '/Users', isDirectory: true },
-          { name: 'home', path: '/home', isDirectory: true }
-        ]
+        drives,
+        homeDirectory: homeDir
       });
     }
   } catch (error) {

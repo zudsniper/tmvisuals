@@ -17,8 +17,12 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     setDynamicLayout,
     layoutMode,
     updateForceLayout,
-    clearAllStoredData
+    clearAllStoredData,
+    setProjectPath,
+    projectPath
   } = useTaskStore();
+
+  const [customPath, setCustomPath] = useState<string | null>(null);
 
   const [showClearConfirmation, setShowClearConfirmation] = useState(false);
 
@@ -205,7 +209,39 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
             </div>
           </div>
 
-          {/* Viewport Behavior section */}
+          {/* Default Project Path section */}
+          <div>
+            <label className={`block text-sm font-medium mb-2 ${
+              isDarkMode ? 'text-gray-300' : 'text-gray-700'
+            }`}>
+              Startup Project Path
+            </label>
+            <input
+              type="text"
+              value={customPath || projectPath || ''}
+              onChange={(e) => setCustomPath(e.target.value)}
+              onBlur={() => {
+                if (customPath !== null) {
+                  setProjectPath(customPath);
+                  // Save to default start path storage as well
+                  if (typeof window !== 'undefined') {
+                    localStorage.setItem('taskmaster-default-start-path', customPath);
+                  }
+                }
+              }}
+              className={`text-sm p-2 rounded border ${
+                isDarkMode ? 'bg-gray-700 text-white border-gray-600' : 'bg-white text-gray-900 border-gray-300'
+              } w-full`}
+              placeholder="Enter default startup directory path"
+            />
+            <p className={`text-xs mt-1 ${
+              isDarkMode ? 'text-gray-400' : 'text-gray-600'
+            }`}>
+              Change this to override the default startup directory.
+            </p>
+          </div>
+
+          
           <div>
             <label className={`block text-sm font-medium mb-2 ${
               isDarkMode ? 'text-gray-300' : 'text-gray-700'
