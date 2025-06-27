@@ -46,6 +46,18 @@ interface TaskStore {
   sseConnection: EventSource | null;
   lastUpdateTime: string | null;
   
+  // Context menu state
+  contextMenu: {
+    isVisible: boolean;
+    position: { x: number; y: number };
+    targetNodeId: string | null;
+    isBackgroundMenu: boolean;
+  };
+  
+  // Grid and viewport state
+  showGrid: boolean;
+  reactFlowInstance: any;
+  
   // Actions
   loadTasks: (tasks: Task[]) => void;
   loadTasksFromPath: (projectPath: string) => Promise<void>;
@@ -78,6 +90,26 @@ interface TaskStore {
   disableLiveUpdates: () => void;
   startWatchingProject: (projectPath: string) => Promise<void>;
   stopWatchingProject: (projectPath: string) => Promise<void>;
+  
+  // Context menu actions
+  showContextMenu: (position: { x: number; y: number }, targetNodeId?: string) => void;
+  hideContextMenu: () => void;
+  toggleTaskLock: (taskId: number) => void;
+  bringTaskToFront: (taskId: number) => void;
+  sendTaskToBack: (taskId: number) => void;
+  duplicateTask: (taskId: number) => void;
+  deleteTask: (taskId: number) => void;
+  
+  // Grid and viewport actions
+  toggleGrid: () => void;
+  resetLayout: () => void;
+  fitAllNodes: () => void;
+  centerViewport: () => void;
+  setReactFlowInstance: (instance: any) => void;
+  
+  // Export actions
+  exportToPNG: (fullGraph?: boolean) => Promise<void>;
+  exportToMermaid: () => string;
   
   // Storage management
   clearAllStoredData: () => void;
@@ -855,6 +887,18 @@ export const useTaskStore = create<TaskStore>((set, get) => {
     sseConnection: null,
     lastUpdateTime: null,
     
+    // Context menu state
+    contextMenu: {
+      isVisible: false,
+      position: { x: 0, y: 0 },
+      targetNodeId: null,
+      isBackgroundMenu: false,
+    },
+    
+    // Grid and viewport state
+    showGrid: false,
+    reactFlowInstance: null,
+    
     loadTasks: (tasks) => {
       console.log('loadTasks called with:', tasks);
       console.log('Number of tasks to load:', tasks?.length);
@@ -927,9 +971,28 @@ export const useTaskStore = create<TaskStore>((set, get) => {
         
       } catch (error) {
         console.error('Failed to load tasks:', error);
+        // Enhanced error handling with user-friendly messages
+        let userFriendlyError = 'Failed to load tasks';
+        
+        if (error instanceof Error) {
+          const errorMessage = error.message;
+          
+          if (errorMessage.includes('tasks directory not found') || errorMessage.includes('No tasks directory')) {
+            userFriendlyError = `No tasks directory found in the selected project.\n\nTo get started:\n• Create a 'tasks' folder in your project root\n• Add a tasks.json file or individual task files\n• Refresh to see your tasks`;
+          } else if (errorMessage.includes('Permission denied') || errorMessage.includes('EACCES')) {
+            userFriendlyError = `Permission denied accessing the project folder.\n\nPlease check that you have read access to the directory and try selecting a different folder.`;
+          } else if (errorMessage.includes('Network') || errorMessage.includes('fetch')) {
+            userFriendlyError = 'Connection error. Please check if the server is running and try again.';
+          } else if (errorMessage.includes('JSON')) {
+            userFriendlyError = `Invalid task file format.\n\nPlease check your tasks.json file for syntax errors, or download a template to get started.`;
+          } else {
+            userFriendlyError = errorMessage;
+          }
+        }
+        
         set({ 
           isLoading: false, 
-          error: error instanceof Error ? error.message : 'Failed to load tasks',
+          error: userFriendlyError,
           tasks: [],
           nodes: [],
           edges: []
@@ -1266,8 +1329,23 @@ export const useTaskStore = create<TaskStore>((set, get) => {
                 error: null
               });
             } else if (data.type === 'error') {
-              console.error('SSE error:', data.message);
-              set({ error: data.message });
+              console.error('🔴 SSE error:', data.message);
+              const errorMsg = data.details ? `${data.message}: ${data.details}` : data.message;
+              set({ error: errorMsg });
+            } else if (data.type === 'watcher-error') {
+              console.error('🔴 File watcher error:', data.message);
+              const errorMsg = `File watcher error: ${data.message}${data.details ? ` (${data.details})` : ''}`;
+              set({ 
+                error: errorMsg,
+                isLiveUpdateEnabled: false // Disable live updates on watcher error
+              });
+              // Optionally close the SSE connection when watcher fails
+              if (eventSource) {
+                eventSource.close();
+                set({ sseConnection: null });
+              }
+            } else if (data.type === 'connected') {
+              console.log('🟢 SSE connection established with ID:', data.id);
             }
           } catch (parseError) {
             console.error('Failed to parse SSE message:', parseError);
@@ -1309,23 +1387,68 @@ export const useTaskStore = create<TaskStore>((set, get) => {
           body: JSON.stringify({ projectPath })
         });
         
+        const result = await response.json();
+        
         if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Failed to start watching project');
+          // Handle different types of errors
+          if (response.status === 404) {
+            // Tasks directory not found
+            console.warn(`⚠️ Tasks directory not found: ${result.message}`);
+            console.log(`📝 Suggestion: ${result.suggestion}`);
+            
+            if (result.maxRetriesExceeded) {
+              console.error('❌ Maximum retry attempts exceeded for this project');
+              set({ 
+                error: `${result.message}\n\n${result.suggestion}`,
+                isLiveUpdateEnabled: false
+              });
+              return; // Don't enable live updates
+            } else {
+              console.log(`🔄 Retry ${result.retryCount}/${result.maxRetries} for project watching`);
+              set({ 
+                error: `${result.message} (Attempt ${result.retryCount}/${result.maxRetries})\n\n${result.suggestion}` 
+              });
+              // Don't enable live updates for missing directories
+              return;
+            }
+          } else if (response.status === 400 && result.maxRetriesExceeded) {
+            // Maximum retries exceeded
+            console.error('❌ Maximum retry attempts exceeded:', result.message);
+            set({ 
+              error: `${result.message}\n\n${result.suggestion}`,
+              isLiveUpdateEnabled: false
+            });
+            return;
+          } else {
+            // Other server errors
+            throw new Error(result.error || result.message || 'Failed to start watching project');
+          }
         }
         
-        const result = await response.json();
-        console.log('Started watching project:', result);
-        
-        // Enable live updates if not already enabled
-        const state = get();
-        if (!state.isLiveUpdateEnabled) {
-          state.enableLiveUpdates();
+        // Success case
+        if (result.watching) {
+          console.log('✅ Started watching project:', result);
+          
+          // Clear any existing error
+          set({ error: null });
+          
+          // Enable live updates if not already enabled
+          const state = get();
+          if (!state.isLiveUpdateEnabled) {
+            state.enableLiveUpdates();
+          }
+        } else {
+          // Server returned success but not watching (shouldn't happen with new logic)
+          console.warn('⚠️ Server response indicates not watching:', result.message);
+          set({ error: result.message || 'Project watching not enabled' });
         }
         
       } catch (error) {
-        console.error('Failed to start watching project:', error);
-        set({ error: `Failed to start watching project: ${error instanceof Error ? error.message : 'Unknown error'}` });
+        console.error('❌ Failed to start watching project:', error);
+        set({ 
+          error: `Failed to start watching project: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          isLiveUpdateEnabled: false
+        });
       }
     },
     
@@ -1403,6 +1526,268 @@ export const useTaskStore = create<TaskStore>((set, get) => {
       } catch (error) {
         console.warn('Failed to clear stored data:', error);
       }
+    },
+    
+    // Context menu actions
+    showContextMenu: (position, targetNodeId) => {
+      set({
+        contextMenu: {
+          isVisible: true,
+          position,
+          targetNodeId: targetNodeId || null,
+          isBackgroundMenu: !targetNodeId,
+        }
+      });
+    },
+    
+    hideContextMenu: () => {
+      set({
+        contextMenu: {
+          isVisible: false,
+          position: { x: 0, y: 0 },
+          targetNodeId: null,
+          isBackgroundMenu: false,
+        }
+      });
+    },
+    
+    toggleTaskLock: (taskId) => {
+      const { tasks, nodes } = get();
+      const updatedTasks = tasks.map(task => 
+        task.id === taskId 
+          ? { ...task, isLocked: !task.isLocked }
+          : task
+      );
+      
+      const updatedNodes = nodes.map(node => 
+        node.data.task.id === taskId 
+          ? { ...node, data: { ...node.data, task: { ...node.data.task, isLocked: !node.data.task.isLocked } } }
+          : node
+      );
+      
+      set({ tasks: updatedTasks, nodes: updatedNodes });
+    },
+    
+    bringTaskToFront: (taskId) => {
+      const { tasks, nodes } = get();
+      const maxZIndex = Math.max(...tasks.map(t => t.zIndex || 0), 0);
+      const newZIndex = maxZIndex + 1;
+      
+      const updatedTasks = tasks.map(task => 
+        task.id === taskId 
+          ? { ...task, zIndex: newZIndex }
+          : task
+      );
+      
+      const updatedNodes = nodes.map(node => 
+        node.data.task.id === taskId 
+          ? { ...node, data: { ...node.data, task: { ...node.data.task, zIndex: newZIndex } }, zIndex: newZIndex }
+          : node
+      );
+      
+      set({ tasks: updatedTasks, nodes: updatedNodes });
+    },
+    
+    sendTaskToBack: (taskId) => {
+      const { tasks, nodes } = get();
+      const minZIndex = Math.min(...tasks.map(t => t.zIndex || 0), 0);
+      const newZIndex = minZIndex - 1;
+      
+      const updatedTasks = tasks.map(task => 
+        task.id === taskId 
+          ? { ...task, zIndex: newZIndex }
+          : task
+      );
+      
+      const updatedNodes = nodes.map(node => 
+        node.data.task.id === taskId 
+          ? { ...node, data: { ...node.data, task: { ...node.data.task, zIndex: newZIndex } }, zIndex: newZIndex }
+          : node
+      );
+      
+      set({ tasks: updatedTasks, nodes: updatedNodes });
+    },
+    
+    duplicateTask: (taskId) => {
+      const { tasks, customPositions, layoutMode, dynamicLayout, currentActiveTaskId, forceLayout } = get();
+      const taskToDuplicate = tasks.find(t => t.id === taskId);
+      if (!taskToDuplicate) return;
+      
+      const newTaskId = Math.max(...tasks.map(t => t.id)) + 1;
+      const newTask: Task = {
+        ...taskToDuplicate,
+        id: newTaskId,
+        title: `${taskToDuplicate.title} (Copy)`,
+        dependencies: [], // Clear dependencies for duplicate
+        isLocked: false,
+        zIndex: (taskToDuplicate.zIndex || 0) + 1
+      };
+      
+      const updatedTasks = [...tasks, newTask];
+      const nodes = calculateNodePositions(updatedTasks, layoutMode, customPositions, dynamicLayout, currentActiveTaskId, forceLayout);
+      const edges = createEdges(updatedTasks, layoutMode);
+      
+      set({ tasks: updatedTasks, nodes, edges });
+    },
+    
+    deleteTask: (taskId) => {
+      const { tasks, customPositions, layoutMode, dynamicLayout, currentActiveTaskId, forceLayout } = get();
+      const updatedTasks = tasks.filter(t => t.id !== taskId);
+      
+      // Remove any dependencies on the deleted task
+      const cleanedTasks = updatedTasks.map(task => ({
+        ...task,
+        dependencies: task.dependencies.filter(depId => depId !== taskId)
+      }));
+      
+      // Remove custom position for deleted task
+      const newCustomPositions = new Map(customPositions);
+      newCustomPositions.delete(`task-${taskId}`);
+      
+      const nodes = calculateNodePositions(cleanedTasks, layoutMode, newCustomPositions, dynamicLayout, currentActiveTaskId, forceLayout);
+      const edges = createEdges(cleanedTasks, layoutMode);
+      
+      set({ tasks: cleanedTasks, nodes, edges, customPositions: newCustomPositions });
+    },
+    
+    // Grid and viewport actions
+    toggleGrid: () => {
+      set(state => ({ showGrid: !state.showGrid }));
+    },
+    
+    resetLayout: () => {
+      const { tasks, layoutMode, dynamicLayout, currentActiveTaskId, forceLayout } = get();
+      const newCustomPositions = new Map();
+      const nodes = calculateNodePositions(tasks, layoutMode, newCustomPositions, dynamicLayout, currentActiveTaskId, forceLayout);
+      const edges = createEdges(tasks, layoutMode);
+      
+      set({ customPositions: newCustomPositions, nodes, edges });
+    },
+    
+    fitAllNodes: () => {
+      const { reactFlowInstance } = get();
+      if (reactFlowInstance) {
+        reactFlowInstance.fitView({ padding: 0.1, maxZoom: 1.5, duration: 800 });
+      }
+    },
+    
+    centerViewport: () => {
+      const { reactFlowInstance } = get();
+      if (reactFlowInstance) {
+        const viewport = reactFlowInstance.getViewport();
+        reactFlowInstance.setViewport({ x: 0, y: 0, zoom: viewport.zoom }, { duration: 800 });
+      }
+    },
+    
+    setReactFlowInstance: (instance: any) => {
+      set({ reactFlowInstance: instance });
+    },
+    
+    // Export actions
+    exportToPNG: async (fullGraph = false) => {
+      try {
+        // Dynamically import html2canvas
+        const { default: html2canvas } = await import('html2canvas');
+        
+        // Find the ReactFlow wrapper element
+        const reactFlowWrapper = document.querySelector('.react-flow');
+        if (!reactFlowWrapper) {
+          console.error('ReactFlow element not found');
+          return;
+        }
+        
+        let targetElement = reactFlowWrapper as HTMLElement;
+        
+        if (!fullGraph) {
+          // For visible area only, use the viewport
+          const viewport = document.querySelector('.react-flow__viewport');
+          if (viewport) {
+            targetElement = viewport as HTMLElement;
+          }
+        }
+        
+        // Generate canvas from the target element
+        const canvas = await html2canvas(targetElement, {
+          backgroundColor: null, // Transparent background
+          scale: 2, // Higher quality
+          useCORS: true,
+          allowTaint: true,
+          foreignObjectRendering: true,
+          logging: false
+        });
+        
+        // Convert to blob and download
+        canvas.toBlob((blob: Blob | null) => {
+          if (blob) {
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `task-visualization-${fullGraph ? 'full' : 'visible'}-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.png`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+          }
+        }, 'image/png');
+        
+        console.log(`PNG export completed (fullGraph: ${fullGraph})`);
+      } catch (error) {
+        console.error('Error exporting to PNG:', error);
+        // Fallback: show message to user
+        alert('PNG export failed. Please try again or use a different browser.');
+      }
+    },
+    
+    exportToMermaid: () => {
+      const { tasks } = get();
+      
+      let mermaid = 'graph TD\n';
+      
+      // Add nodes
+      tasks.forEach(task => {
+        const nodeId = `T${task.id}`;
+        const nodeLabel = task.title.replace(/"/g, '\\"');
+        const statusClass = task.status === 'done' ? ':::done' : 
+                           task.status === 'in-progress' ? ':::inProgress' : 
+                           ':::pending';
+        mermaid += `    ${nodeId}["${nodeLabel}"]${statusClass}\n`;
+      });
+      
+      // Add edges (dependencies)
+      tasks.forEach(task => {
+        task.dependencies.forEach(depId => {
+          mermaid += `    T${depId} --> T${task.id}\n`;
+        });
+      });
+      
+      // Add class definitions
+      mermaid += '\n    classDef done fill:#10b981,stroke:#059669,stroke-width:2px,color:#fff\n';
+      mermaid += '    classDef inProgress fill:#f59e0b,stroke:#d97706,stroke-width:2px,color:#fff\n';
+      mermaid += '    classDef pending fill:#6b7280,stroke:#4b5563,stroke-width:2px,color:#fff\n';
+      
+      // Copy to clipboard
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(mermaid).then(() => {
+          console.log('Mermaid diagram copied to clipboard');
+        }).catch(err => {
+          console.error('Failed to copy to clipboard:', err);
+        });
+      } else {
+        // Fallback for older browsers
+        const textArea = document.createElement('textarea');
+        textArea.value = mermaid;
+        document.body.appendChild(textArea);
+        textArea.select();
+        try {
+          document.execCommand('copy');
+          console.log('Mermaid diagram copied to clipboard (fallback)');
+        } catch (err) {
+          console.error('Failed to copy to clipboard (fallback):', err);
+        }
+        document.body.removeChild(textArea);
+      }
+      
+      return mermaid;
     }
   };
 });

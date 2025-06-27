@@ -84,7 +84,11 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ onSelectPath, onClose,
     setLoading(true);
     // Don't clear error immediately, only on success or new loadDirectory attempt
     try {
+      setError(null);
+      setLoading(true);
+      
       const response = await fetch('/api/drives');
+<<<<<<< HEAD
       if (!response.ok) {
         const errorMsg = await parseFetchError(response, 'Failed to load system drives');
         throw new Error(errorMsg);
@@ -109,49 +113,197 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ onSelectPath, onClose,
     } catch (error) {
       console.error('Failed to load drives:', error);
       setError(error instanceof Error ? error.message : 'An unknown error occurred while loading drives');
+=======
+      if (!response.ok) {
+        const errorMsg = await parseFetchError(response, 'Failed to load system drives');
+        throw new Error(errorMsg);
+      }
+      const data = await response.json();
+      setDrives(data.drives || []);
+      setError(null); // Clear error on successful drive load
+      
+      // Set initial path to home directory if available
+      if (data.homeDirectory) {
+        setCurrentPath(data.homeDirectory);
+        await loadDirectory(data.homeDirectory);
+      } else if (data.drives && data.drives.length > 0) {
+        const defaultPath = data.drives[0].path;
+        setCurrentPath(defaultPath);
+        await loadDirectory(defaultPath);
+      } else {
+        // If no drives, maybe load root or a default, or show a message.
+        // For now, if loadDirectory isn't called, ensure loading is false.
+        setLoading(false);
+      }
+      
+      // Set initial path based on platform
+      const defaultPath = drives.find((d: FileItem) => d.path === '/Users') || drives[0];
+      if (defaultPath?.path) {
+        setCurrentPath(defaultPath.path);
+        await loadDirectory(defaultPath.path);
+      }
+    } catch (error) {
+      console.error('Failed to load drives:', error);
+      setError(error instanceof Error ? error.message : 'An unknown error occurred while loading drives');
       setLoading(false);
     }
   };
 
   const loadDirectory = async (path: string) => {
+    // Validate path input
+    if (!path || typeof path !== 'string') {
+      setError('Invalid directory path provided');
+      return;
+    }
+    
+    const trimmedPath = path.trim();
+    if (trimmedPath.length === 0) {
+      setError('Directory path cannot be empty');
+      return;
+    }
+    
     setLoading(true);
+<<<<<<< HEAD
     // setError(null); // Don't clear error immediately, only on success.
     // Error from a previous attempt will persist until this one succeeds.
+=======
+    setError(null);
+    setItems([]); // Clear previous items while loading
+>>>>>>> release
     
     try {
-      const response = await fetch(`/api/browse?dir=${encodeURIComponent(path)}`);
+      const response = await fetch(`/api/browse?dir=${encodeURIComponent(trimmedPath)}`);
       
       if (!response.ok) {
+<<<<<<< HEAD
         const errorMsg = await parseFetchError(response, 'Failed to load directory contents');
         throw new Error(errorMsg);
+=======
+        let errorData;
+        try {
+          errorData = await response.json();
+        } catch {
+          errorData = { error: 'Server returned an invalid response' };
+        }
+        
+        const errorMessage = errorData.details || errorData.error || `HTTP ${response.status}: Failed to load directory`;
+        
+        // Provide user-friendly error messages based on error codes
+        if (errorData.errorCode === 'ENOENT') {
+          throw new Error(`Directory does not exist: ${trimmedPath}`);
+        } else if (errorData.errorCode === 'EACCES') {
+          throw new Error(`Permission denied: Cannot access ${trimmedPath}`);
+        } else if (response.status === 400) {
+          throw new Error(`Invalid path: ${errorMessage}`);
+        } else if (response.status === 404) {
+          throw new Error(`Directory not found: ${trimmedPath}`);
+        } else {
+          throw new Error(errorMessage);
+        }
+>>>>>>> release
       }
       
       const data: BrowseResponse = await response.json();
+      
+      // Validate response data
+      if (!data || typeof data !== 'object') {
+        throw new Error('Invalid response format from server');
+      }
+      
+      if (!data.currentPath) {
+        throw new Error('Server response missing current path');
+      }
+      
+      if (!Array.isArray(data.items)) {
+        throw new Error('Server response missing items array');
+      }
+      
       setCurrentPath(data.currentPath);
       setItems(data.items);
+<<<<<<< HEAD
       setError(null); // Clear error only on successful directory load
     } catch (error) {
       console.error('Directory load error:', error);
       setError(error instanceof Error ? error.message : 'An unknown error occurred while loading directory');
+=======
+      
+    } catch (error) {
+      console.error('Directory load error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred while loading directory';
+      setError(errorMessage);
+      
+      // Provide actionable suggestions based on error type
+      if (errorMessage.includes('Permission denied')) {
+        setError(`${errorMessage}\n\nTry selecting a different directory or contact your system administrator.`);
+      } else if (errorMessage.includes('does not exist')) {
+        setError(`${errorMessage}\n\nThe directory may have been moved or deleted. Try navigating to a parent directory.`);
+      }
+>>>>>>> release
     } finally {
       setLoading(false);
+    }
     }
   };
 
   const handleItemClick = (item: FileItem) => {
+    if (!item || !item.path) {
+      setError('Invalid item selected');
+      return;
+    }
+    
     if (item.isDirectory) {
-      loadDirectory(item.path);
+      try {
+        loadDirectory(item.path);
+      } catch (error) {
+        console.error('Failed to navigate to directory:', error);
+        setError('Failed to navigate to the selected directory');
+      }
     }
   };
 
   const goToParent = () => {
-    const parentPath = currentPath.split('/').slice(0, -1).join('/') || '/';
-    loadDirectory(parentPath);
+    try {
+      if (!currentPath) {
+        setError('Cannot navigate up: current path is not set');
+        return;
+      }
+      
+      // Handle different path separators based on platform
+      const separator = currentPath.includes('\\') ? '\\' : '/';
+      const pathParts = currentPath.split(separator);
+      
+      if (pathParts.length <= 1) {
+        setError('Already at the root directory');
+        return;
+      }
+      
+      const parentPath = pathParts.slice(0, -1).join(separator) || separator;
+      loadDirectory(parentPath);
+    } catch (error) {
+      console.error('Failed to navigate to parent directory:', error);
+      setError('Failed to navigate to parent directory');
+    }
   };
 
   const handleSelectPath = () => {
-    onSelectPath(currentPath);
-    onClose();
+    try {
+      if (!currentPath || currentPath.trim().length === 0) {
+        setError('Cannot select empty path');
+        return;
+      }
+      
+      // Basic path validation before selecting
+      if (currentPath.includes('..')) {
+        setError('Invalid path: contains directory traversal attempts');
+        return;
+      }
+      
+      onSelectPath(currentPath.trim());
+      onClose();
+    } catch (error) {
+      console.error('Failed to select path:', error);
+      setError('Failed to select the current path');
+    }
   };
 
   const formatFileSize = (bytes: number): string => {

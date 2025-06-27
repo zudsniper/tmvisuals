@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
 import { Task } from '../types/task';
-import { CheckCircle, Circle, Clock, ChevronDown, ChevronUp, ExternalLink, Activity } from 'lucide-react';
+import { CheckCircle, Circle, Clock, ChevronDown, ChevronUp, ExternalLink, Activity, Lock } from 'lucide-react';
 import { useTaskStore } from '../store/taskStore';
 
 interface TaskNodeData {
@@ -49,6 +49,12 @@ export const TaskNode: React.FC<NodeProps<TaskNodeData>> = ({ data }) => {
   // Check if this task is actively being worked on
   const isActivelyWorking = task.status === 'in-progress' || 
     task.subtasks.some(subtask => subtask.status === 'in-progress');
+  
+  // Check if task is locked
+  const isLocked = task.isLocked || false;
+  
+  // Get z-index for layering
+  const zIndex = task.zIndex || 0;
   
   // Status change detection and animations
   useEffect(() => {
@@ -173,13 +179,16 @@ export const TaskNode: React.FC<NodeProps<TaskNodeData>> = ({ data }) => {
           } 
           rounded-lg shadow-md p-4 min-w-[250px] max-w-[350px] border-2 
           ${priorityColorMap[task.priority]} 
-          cursor-pointer hover:shadow-lg transition-all duration-300
+          ${!isLocked ? 'cursor-pointer hover:shadow-lg' : 'cursor-not-allowed opacity-75'} 
+          transition-all duration-300
           ${shouldHighlight ? 'shadow-2xl shadow-orange-500/50 ring-4 ring-orange-400/60 ring-offset-2 active-task-border-glow' : ''}
           ${isActivelyWorking && !shouldHighlight ? 'shadow-lg shadow-orange-500/30 ring-2 ring-orange-400/40' : ''}
           ${statusChangeAnimation ? 'animate-status-change' : ''}
           ${completionCelebration ? 'animate-completion-celebration' : ''}
+          ${isLocked ? `border-dashed ${isDarkMode ? 'border-gray-500' : 'border-gray-400'}` : ''}
         `}
-        onClick={handleNodeClick}
+        style={{ zIndex: zIndex }}
+        onClick={isLocked ? undefined : handleNodeClick}
     >
       {/* Only show connection handles in graph mode */}
       {showHandles && (
@@ -198,6 +207,21 @@ export const TaskNode: React.FC<NodeProps<TaskNodeData>> = ({ data }) => {
           }`}>
             #{task.id}
           </span>
+          
+          {/* Lock indicator */}
+          {isLocked && (
+            <div className="flex items-center gap-1">
+              <Lock className="w-4 h-4 text-gray-500" />
+              <span className="text-xs text-gray-500 font-medium">Locked</span>
+            </div>
+          )}
+          
+          {/* Z-index indicator for high values */}
+          {zIndex > 0 && (
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-blue-500 font-medium">Layer {zIndex}</span>
+            </div>
+          )}
           
           {/* Enhanced activity indicator for working tasks */}
           {hasRecentActivity && (

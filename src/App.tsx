@@ -21,6 +21,9 @@ import { Settings } from './components/Settings';
 import { SearchBar } from './components/SearchBar';
 import { Legend } from './components/Legend';
 import { FileBrowser } from './components/FileBrowser';
+import { ContextMenu } from './components/ContextMenu';
+import ErrorBoundary from './components/ErrorBoundary';
+import { NoTasksFound } from './components/NoTasksFound';
 import { useTaskStore } from './store/taskStore';
 import { Settings as SettingsIcon, Grid3X3, Network, FolderOpen, Sun, Moon, Monitor, Edit3 } from 'lucide-react';
 
@@ -67,7 +70,13 @@ function Flow() {
     taskStatusManager,
     autoFocusOnActiveTask,
     focusTransitionDuration,
-    currentActiveTaskId
+    currentActiveTaskId,
+    // Context menu
+    showContextMenu,
+    hideContextMenu,
+    showGrid,
+    // ReactFlow instance
+    setReactFlowInstance
   } = useTaskStore();
   
   const [flowNodes, setNodes, onNodesChange] = useNodesState(nodes);
@@ -81,8 +90,9 @@ function Flow() {
   useEffect(() => {
     if (reactFlowInstance) {
       cameraController.setReactFlowInstance(reactFlowInstance);
+      setReactFlowInstance(reactFlowInstance);
     }
-  }, [reactFlowInstance, cameraController]);
+  }, [reactFlowInstance, cameraController, setReactFlowInstance]);
 
   // Active task detection and viewport management
   useEffect(() => {
@@ -185,22 +195,49 @@ function Flow() {
   useEffect(() => {
     if (!projectPath) {
       console.log('Attempting to load default tasks...');
-      fetch('/tasks/tasks.json')
-        .then(res => {
+      
+      const loadDefaultTasks = async () => {
+        try {
+          const res = await fetch('/tasks/tasks.json');
           console.log('Fetch response:', res.status, res.ok);
-          return res.json();
-        })
-        .then(data => {
+          
+          if (!res.ok) {
+            throw new Error(`Failed to fetch default tasks: ${res.status}`);
+          }
+          
+          const data = await res.json();
+          
+          if (!data || typeof data !== 'object') {
+            throw new Error('Invalid tasks data format');
+          }
+          
           console.log('Tasks data loaded:', data);
           console.log('Number of tasks:', data.tasks?.length);
-          loadTasks(data.tasks);
-        })
-        .catch(err => console.error('Failed to load default tasks:', err));
+          
+          const tasks = Array.isArray(data.tasks) ? data.tasks : [];
+          loadTasks(tasks);
+        } catch (err) {
+          console.error('Failed to load default tasks:', err);
+          // Don't set error state for default tasks failing - just log it
+        }
+      };
+      
+      loadDefaultTasks();
     }
   }, [loadTasks, projectPath]);
 
   const handleSelectProjectPath = async (path: string) => {
-    await loadTasksFromPath(path);
+    try {
+      if (!path || typeof path !== 'string' || path.trim().length === 0) {
+        console.error('Invalid project path provided');
+        return;
+      }
+      
+      await loadTasksFromPath(path.trim());
+    } catch (error) {
+      console.error('Failed to load tasks from selected path:', error);
+      // Error handling is done in the store, just log here
+    }
   };
 
   useEffect(() => {
@@ -286,6 +323,43 @@ function Flow() {
     [setEdges]
   );
 
+  // Handle node drag prevention for locked nodes
+  const onNodeDragStart = useCallback((event: React.MouseEvent, node: any) => {
+    const task = node.data.task;
+    if (task.isLocked) {
+      event.preventDefault();
+      return false;
+    }
+  }, []);
+
+  // Context menu handlers
+  const onNodeContextMenu = useCallback((event: React.MouseEvent, node: any) => {
+    event.preventDefault();
+    showContextMenu(
+      { x: event.clientX, y: event.clientY },
+      node.id
+    );
+  }, [showContextMenu]);
+
+  const onPaneContextMenu = useCallback((event: React.MouseEvent) => {
+    event.preventDefault();
+    showContextMenu(
+      { x: event.clientX, y: event.clientY }
+    );
+  }, [showContextMenu]);
+
+  const onPaneClick = useCallback(() => {
+    hideContextMenu();
+  }, [hideContextMenu]);
+
+  // Show NoTasksFound component when appropriate
+  const showNoTasksFound = !isLoading && !error && tasks.length === 0;
+  const handleRefreshTasks = useCallback(async () => {
+    if (projectPath) {
+      await loadTasksFromPath(projectPath);
+    }
+  }, [projectPath, loadTasksFromPath]);
+
   return (
     <div className={`h-full w-full relative ${isDarkMode ? 'dark bg-gray-900' : 'bg-white'}`}>
       {/* Loading overlay */}
@@ -304,15 +378,50 @@ function Flow() {
 
       {/* Error display */}
       {error && (
-        <div className={`absolute top-20 left-1/2 transform -translate-x-1/2 px-4 py-3 rounded-lg shadow-lg z-40 ${
+        <div className={`absolute top-20 left-1/2 transform -translate-x-1/2 px-4 py-3 rounded-lg shadow-lg z-40 max-w-lg ${
           isDarkMode 
             ? 'bg-red-900 border border-red-700 text-red-200'
             : 'bg-red-50 border border-red-200 text-red-700'
         }`}>
-          <div className="flex items-center gap-2">
-            <span className="font-medium">Error:</span>
-            <span>{error}</span>
+          <div className="text-sm">
+            <div className="font-medium mb-1">Unable to load tasks</div>
+            <div className="mb-2">{error}</div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowFileBrowser(true)}
+                className={`px-3 py-1 text-xs rounded transition-colors ${
+                  isDarkMode
+                    ? 'bg-red-800 hover:bg-red-700 text-red-200'
+                    : 'bg-red-100 hover:bg-red-200 text-red-700'
+                }`}
+              >
+                Select Different Folder
+              </button>
+              {projectPath && (
+                <button
+                  onClick={handleRefreshTasks}
+                  className={`px-3 py-1 text-xs rounded transition-colors ${
+                    isDarkMode
+                      ? 'bg-red-800 hover:bg-red-700 text-red-200'
+                      : 'bg-red-100 hover:bg-red-200 text-red-700'
+                  }`}
+                >
+                  Retry
+                </button>
+              )}
+            </div>
           </div>
+        </div>
+      )}
+
+      {/* No Tasks Found State */}
+      {showNoTasksFound && (
+        <div className="absolute inset-0 z-30">
+          <NoTasksFound 
+            onSelectFolder={() => setShowFileBrowser(true)}
+            onRefresh={handleRefreshTasks}
+            projectPath={projectPath}
+          />
         </div>
       )}
 
@@ -323,6 +432,10 @@ function Flow() {
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onMove={handleMove}
+        onNodeDragStart={onNodeDragStart}
+        onNodeContextMenu={onNodeContextMenu}
+        onPaneContextMenu={onPaneContextMenu}
+        onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
         fitView={!lastViewport}
         defaultViewport={lastViewport || { x: 0, y: 0, zoom: 0.8 }}
@@ -336,9 +449,9 @@ function Flow() {
         zoomOnDoubleClick={false}
       >
         <Background 
-          variant={BackgroundVariant.Dots} 
-          gap={12} 
-          size={1} 
+          variant={showGrid ? BackgroundVariant.Dots : BackgroundVariant.Lines}
+          gap={showGrid ? 12 : 20} 
+          size={showGrid ? 1 : 0.5} 
           color={isDarkMode ? '#374151' : '#e5e7eb'}
         />
         <Controls />
@@ -350,6 +463,9 @@ function Flow() {
           maskColor={isDarkMode ? '#111827' : '#f3f4f6'}
         />
       </ReactFlow>
+
+      {/* Context Menu */}
+      <ContextMenu />
       
       {/* Top Navigation Bar */}
       <div className={`absolute top-0 left-0 right-0 border-b shadow-sm z-10 ${
@@ -579,10 +695,57 @@ function Flow() {
 }
 
 function App() {
+  const handleError = (error: Error, errorInfo: React.ErrorInfo) => {
+    // Log error with enhanced detail for debugging
+    console.error('Application Error Boundary triggered:', {
+      error: {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      },
+      errorInfo: {
+        componentStack: errorInfo.componentStack
+      },
+      timestamp: new Date().toISOString(),
+      userAgent: navigator.userAgent,
+      url: window.location.href
+    });
+    
+    // Could integrate with error reporting service here
+    // e.g., Sentry, LogRocket, etc.
+  };
+
   return (
-    <ReactFlowProvider>
-      <Flow />
-    </ReactFlowProvider>
+    <ErrorBoundary onError={handleError}>
+      <ReactFlowProvider>
+        <ErrorBoundary 
+          onError={handleError}
+          fallback={() => (
+            <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
+              <div className="max-w-lg w-full bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+                <div className="text-center">
+                  <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
+                    ReactFlow Component Error
+                  </h2>
+                  <p className="text-gray-600 dark:text-gray-400 mb-4">
+                    There was an error with the task visualization component. 
+                    This might be due to invalid task data or a layout issue.
+                  </p>
+                  <button 
+                    onClick={() => window.location.reload()}
+                    className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded transition-colors"
+                  >
+                    Reload Application
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        >
+          <Flow />
+        </ErrorBoundary>
+      </ReactFlowProvider>
+    </ErrorBoundary>
   );
 }
 
