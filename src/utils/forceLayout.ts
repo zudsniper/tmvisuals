@@ -1181,7 +1181,6 @@ export class ForceDirectedLayout {
     return { ...this.performanceMetrics };
   }
 
-<<<<<<< HEAD
   // Get current performance state
   public isInEmergencyMode(): boolean {
     return this._emergencyMode;

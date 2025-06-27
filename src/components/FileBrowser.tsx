@@ -88,7 +88,6 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ onSelectPath, onClose,
       setLoading(true);
       
       const response = await fetch('/api/drives');
-<<<<<<< HEAD
       if (!response.ok) {
         const errorMsg = await parseFetchError(response, 'Failed to load system drives');
         throw new Error(errorMsg);
@@ -109,38 +108,6 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ onSelectPath, onClose,
         // If no drives, maybe load root or a default, or show a message.
         // For now, if loadDirectory isn't called, ensure loading is false.
         setLoading(false);
-      }
-    } catch (error) {
-      console.error('Failed to load drives:', error);
-      setError(error instanceof Error ? error.message : 'An unknown error occurred while loading drives');
-=======
-      if (!response.ok) {
-        const errorMsg = await parseFetchError(response, 'Failed to load system drives');
-        throw new Error(errorMsg);
-      }
-      const data = await response.json();
-      setDrives(data.drives || []);
-      setError(null); // Clear error on successful drive load
-      
-      // Set initial path to home directory if available
-      if (data.homeDirectory) {
-        setCurrentPath(data.homeDirectory);
-        await loadDirectory(data.homeDirectory);
-      } else if (data.drives && data.drives.length > 0) {
-        const defaultPath = data.drives[0].path;
-        setCurrentPath(defaultPath);
-        await loadDirectory(defaultPath);
-      } else {
-        // If no drives, maybe load root or a default, or show a message.
-        // For now, if loadDirectory isn't called, ensure loading is false.
-        setLoading(false);
-      }
-      
-      // Set initial path based on platform
-      const defaultPath = drives.find((d: FileItem) => d.path === '/Users') || drives[0];
-      if (defaultPath?.path) {
-        setCurrentPath(defaultPath.path);
-        await loadDirectory(defaultPath.path);
       }
     } catch (error) {
       console.error('Failed to load drives:', error);
@@ -163,22 +130,13 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ onSelectPath, onClose,
     }
     
     setLoading(true);
-<<<<<<< HEAD
-    // setError(null); // Don't clear error immediately, only on success.
-    // Error from a previous attempt will persist until this one succeeds.
-=======
     setError(null);
     setItems([]); // Clear previous items while loading
->>>>>>> release
     
     try {
       const response = await fetch(`/api/browse?dir=${encodeURIComponent(trimmedPath)}`);
       
       if (!response.ok) {
-<<<<<<< HEAD
-        const errorMsg = await parseFetchError(response, 'Failed to load directory contents');
-        throw new Error(errorMsg);
-=======
         let errorData;
         try {
           errorData = await response.json();
@@ -200,7 +158,6 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ onSelectPath, onClose,
         } else {
           throw new Error(errorMessage);
         }
->>>>>>> release
       }
       
       const data: BrowseResponse = await response.json();
@@ -220,13 +177,7 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ onSelectPath, onClose,
       
       setCurrentPath(data.currentPath);
       setItems(data.items);
-<<<<<<< HEAD
       setError(null); // Clear error only on successful directory load
-    } catch (error) {
-      console.error('Directory load error:', error);
-      setError(error instanceof Error ? error.message : 'An unknown error occurred while loading directory');
-=======
-      
     } catch (error) {
       console.error('Directory load error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred while loading directory';
@@ -238,10 +189,8 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ onSelectPath, onClose,
       } else if (errorMessage.includes('does not exist')) {
         setError(`${errorMessage}\n\nThe directory may have been moved or deleted. Try navigating to a parent directory.`);
       }
->>>>>>> release
     } finally {
       setLoading(false);
-    }
     }
   };
 
