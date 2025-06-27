@@ -4,6 +4,7 @@ import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import chokidar from 'chokidar';
+import { resolveTaskmasterPaths } from './utils/paths.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -86,24 +87,32 @@ app.post('/api/watch-project', (req, res) => {
       return res.status(400).json({ error: 'Project path is required' });
     }
     
-    const safeProjectPath = path.resolve(projectPath);
-    const tasksPath = path.join(safeProjectPath, 'tasks');
-    
+const safeProjectPath = path.resolve(projectPath);
+    const { tasksDir, mode } = resolveTaskmasterPaths(safeProjectPath);
+
     // Stop existing watcher for this path if any
     if (fileWatchers.has(safeProjectPath)) {
       fileWatchers.get(safeProjectPath).close();
     }
-    
-    // Check if tasks directory exists
-    if (!fs.existsSync(tasksPath)) {
-      return res.json({ 
-        message: 'No tasks directory found to watch',
-        watching: false
-      });
+
+    // Watch the resolved tasks directory
+    let directoriesToWatch = [tasksDir];
+    if (mode === 'legacy') {
+      // Also watch legacy directory for backward compatibility
+      directoriesToWatch.push(path.join(safeProjectPath, 'tasks'));
     }
-    
+
+    directoriesToWatch.forEach(dir => {
+      if (!fs.existsSync(dir)) {
+        return res.json({ 
+          message: `No tasks directory found to watch at ${dir}`,
+          watching: false
+        });
+      }
+    });
+
     // Start watching the tasks directory
-    const watcher = chokidar.watch(tasksPath, {
+    const watcher = chokidar.watch(directoriesToWatch, {
       persistent: true,
       ignoreInitial: true,
       depth: 1
@@ -121,7 +130,8 @@ app.post('/api/watch-project', (req, res) => {
           type: 'tasks-updated',
           data: updatedTasks,
           timestamp: new Date().toISOString(),
-          changedFile: path.basename(filePath)
+          changedFile: path.basename(filePath),
+          mode: mode
         };
         
         broadcastToSSE(updateEvent);
@@ -230,63 +240,100 @@ function broadcastToSSE(data) {
   }
 }
 
-// Helper function to load tasks from a project path (extracted from existing endpoint)
+// Helper function to load tasks from a project path using the resolver utility
 async function loadTasksFromPath(projectPath) {
   const safeProjectPath = path.resolve(projectPath);
-  const tasksPath = path.join(safeProjectPath, 'tasks');
   
-  // Check if tasks directory exists
-  if (!fs.existsSync(tasksPath)) {
+  // Use the resolver utility to determine paths and mode
+  const paths = resolveTaskmasterPaths(safeProjectPath);
+  
+  // Check if tasks directory/file exists
+  if (!fs.existsSync(paths.tasksJson)) {
     return { 
       tasks: [], 
       projectPath: safeProjectPath,
-      tasksPath: tasksPath,
-      message: 'No tasks directory found in project'
+      mode: paths.mode,
+      message: `No tasks file found at ${paths.tasksJson}`
     };
   }
   
-  // Look for tasks.json file first
-  const tasksJsonPath = path.join(tasksPath, 'tasks.json');
+  let tasks = [];
+  let config = null;
+  let report = null;
+  
+  // Load tasks.json
   try {
-    const tasksJsonData = await fs.readFile(tasksJsonPath, 'utf8');
+    const tasksJsonData = await fs.readFile(paths.tasksJson, 'utf8');
     const parsedData = JSON.parse(tasksJsonData);
-    return { 
-      tasks: parsedData.tasks || parsedData || [],
-      projectPath: safeProjectPath,
-      tasksPath: tasksPath,
-      source: 'tasks.json'
-    };
+    tasks = parsedData.tasks || parsedData || [];
   } catch (error) {
-    // tasks.json doesn't exist or is invalid, fall back to scanning .txt files
+    console.warn(`Failed to read tasks.json: ${error.message}`);
+    
+    // Fallback: scan for individual task files (legacy behavior)
+    if (fs.existsSync(paths.tasksDir)) {
+      const taskFiles = await fs.readdir(paths.tasksDir);
+      let taskId = 1;
+      
+      for (const file of taskFiles) {
+        if (file.startsWith('task_') && (file.endsWith('.txt') || file.endsWith('.md'))) {
+          try {
+            const filePath = path.join(paths.tasksDir, file);
+            const content = await fs.readFile(filePath, 'utf8');
+            
+            // Parse task content - look for basic structure
+            const lines = content.split('\n').filter(line => line.trim());
+            const title = lines[0] || file.replace(/\.(txt|md)$/, '');
+            const description = lines.slice(1).join('\n').trim() || 'No description available';
+            
+            tasks.push({
+              id: taskId++,
+              title: title.replace(/^#*\s*/, ''), // Remove markdown headers
+              description: description,
+              status: 'pending',
+              dependencies: [], // Could be parsed from content later
+              filePath: filePath,
+              fileName: file
+            });
+          } catch (fileError) {
+            console.warn(`Failed to read task file ${file}:`, fileError.message);
+          }
+        }
+      }
+    }
   }
   
-  // Scan for individual task files (.txt, .md, etc.)
-  const taskFiles = await fs.readdir(tasksPath);
-  const tasks = [];
-  let taskId = 1;
-  
-  for (const file of taskFiles) {
-    if (file.startsWith('task_') && (file.endsWith('.txt') || file.endsWith('.md'))) {
+  // For v2 mode, load additional files
+  if (paths.mode === 'v2') {
+    // Load config.json if it exists
+    if (paths.configJson && fs.existsSync(paths.configJson)) {
       try {
-        const filePath = path.join(tasksPath, file);
-        const content = await fs.readFile(filePath, 'utf8');
+        const configData = await fs.readFile(paths.configJson, 'utf8');
+        config = JSON.parse(configData);
+      } catch (error) {
+        console.warn(`Failed to read config.json: ${error.message}`);
+      }
+    }
+    
+    // Load the latest report from reports/ directory if it exists
+    if (paths.reportsDir && fs.existsSync(paths.reportsDir)) {
+      try {
+        const reportFiles = await fs.readdir(paths.reportsDir);
+        const jsonReports = reportFiles
+          .filter(file => file.endsWith('.json'))
+          .map(file => ({
+            name: file,
+            path: path.join(paths.reportsDir, file),
+            stats: fs.statSync(path.join(paths.reportsDir, file))
+          }))
+          .sort((a, b) => b.stats.mtime - a.stats.mtime); // Sort by modification time, newest first
         
-        // Parse task content - look for basic structure
-        const lines = content.split('\n').filter(line => line.trim());
-        const title = lines[0] || file.replace(/\.(txt|md)$/, '');
-        const description = lines.slice(1).join('\n').trim() || 'No description available';
-        
-        tasks.push({
-          id: taskId++,
-          title: title.replace(/^#*\s*/, ''), // Remove markdown headers
-          description: description,
-          status: 'pending',
-          dependencies: [], // Could be parsed from content later
-          filePath: filePath,
-          fileName: file
-        });
-      } catch (fileError) {
-        console.warn(`Failed to read task file ${file}:`, fileError.message);
+        if (jsonReports.length > 0) {
+          const latestReport = jsonReports[0];
+          const reportData = await fs.readFile(latestReport.path, 'utf8');
+          report = JSON.parse(reportData);
+        }
+      } catch (error) {
+        console.warn(`Failed to read reports: ${error.message}`);
       }
     }
   }
@@ -294,9 +341,9 @@ async function loadTasksFromPath(projectPath) {
   return { 
     tasks,
     projectPath: safeProjectPath,
-    tasksPath: tasksPath,
-    source: 'individual_files',
-    filesFound: tasks.length
+    mode: paths.mode,
+    ...(config && { config }),
+    ...(report && { report })
   };
 }
 
