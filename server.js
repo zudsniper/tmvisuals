@@ -81,12 +81,146 @@ const INITIAL_BACKOFF_DELAY = 1000;
 // Maximum backoff delay in milliseconds
 const MAX_BACKOFF_DELAY = 30000;
 
+// Root route - show helpful message if someone visits the API directly
+// This MUST be defined before static middleware to take precedence
+app.get('/', (req, res) => {
+  const PORT_UI = process.env.PORT_UI || 5551;
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>⚠️ Wrong URL - This is the API Server</title>
+      <style>
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          height: 100vh;
+          margin: 0;
+          background: #0d1117;
+          color: #c9d1d9;
+          overflow: hidden;
+        }
+        .container {
+          text-align: center;
+          padding: 3rem;
+          background: #161b22;
+          border-radius: 16px;
+          box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+          border: 1px solid #30363d;
+          max-width: 600px;
+          animation: fadeIn 0.5s ease-out;
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        h1 { 
+          color: #f85149; 
+          margin-bottom: 1.5rem;
+          font-size: 3rem;
+          font-weight: 700;
+          text-shadow: 0 2px 4px rgba(248, 81, 73, 0.3);
+        }
+        .error-icon {
+          font-size: 5rem;
+          margin-bottom: 1rem;
+          animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.1); }
+        }
+        p { 
+          color: #8b949e; 
+          margin: 1rem 0;
+          font-size: 1.1rem;
+          line-height: 1.6;
+        }
+        .highlight {
+          color: #58a6ff;
+          font-weight: 600;
+        }
+        a {
+          display: inline-block;
+          margin-top: 2rem;
+          padding: 1rem 3rem;
+          background: linear-gradient(135deg, #238636 0%, #2ea043 100%);
+          color: white;
+          text-decoration: none;
+          border-radius: 8px;
+          font-weight: 600;
+          font-size: 1.2rem;
+          transition: all 0.3s;
+          box-shadow: 0 4px 12px rgba(35, 134, 54, 0.3);
+        }
+        a:hover { 
+          transform: translateY(-2px);
+          box-shadow: 0 6px 20px rgba(35, 134, 54, 0.4);
+        }
+        code {
+          background: #0d1117;
+          padding: 0.3rem 0.6rem;
+          border-radius: 6px;
+          font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', monospace;
+          font-size: 1rem;
+          border: 1px solid #30363d;
+        }
+        .api-info {
+          margin-top: 3rem;
+          padding-top: 2rem;
+          border-top: 1px solid #30363d;
+          font-size: 0.9rem;
+          color: #6e7681;
+        }
+        .warning-box {
+          background: rgba(248, 81, 73, 0.1);
+          border: 2px solid #f85149;
+          border-radius: 8px;
+          padding: 1.5rem;
+          margin: 2rem 0;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="error-icon">🚫</div>
+        <h1>WRONG URL!</h1>
+        <div class="warning-box">
+          <p><strong>You're on the API server!</strong></p>
+          <p>This is <span class="highlight">NOT</span> where the TaskMaster Visualizer UI is located.</p>
+        </div>
+        <p>The API server is running on port <code>${PORT}</code></p>
+        <p>To access the TaskMaster Visualizer UI, please go to:</p>
+        <a href="http://localhost:${PORT_UI}">
+          🚀 Open TaskMaster Visualizer
+          <br>
+          <small style="font-size: 0.8rem; opacity: 0.8;">http://localhost:${PORT_UI}</small>
+        </a>
+        <div class="api-info">
+          <p>This server provides API endpoints for:</p>
+          <p>📁 File operations • 🔄 Live updates • 📊 Task management</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `);
+});
+
 // Serve static files from the dist directory when built
 const distPath = path.join(__dirname, 'dist');
 const publicPath = path.join(__dirname, 'public');
 
 if (fs.existsSync(distPath)) {
-  app.use(express.static(distPath));
+  // Use a custom static middleware that skips the root path
+  app.use((req, res, next) => {
+    if (req.path === '/') {
+      // Skip static serving for root path
+      return next();
+    }
+    express.static(distPath)(req, res, next);
+  });
   console.log('✅ Serving built application from dist/');
 } else {
   console.warn('⚠️  No dist/ directory found. Run "npm run build" first.');
@@ -178,34 +312,35 @@ app.post('/api/watch-project', async (req, res) => {
       directoriesToWatch.push(path.join(safeProjectPath, 'tasks'));
     }
 
-    directoriesToWatch.forEach(async dir => {
-      if (!fs.existsSync(dir)) {
+    const existingDirs = directoriesToWatch.filter(dir => fs.existsSync(dir));
+
+    if (existingDirs.length === 0) {
         const retryCount = watchRetries.get(safeProjectPath) || 0;
 
         if (retryCount >= MAX_RETRY_ATTEMPTS) {
-          watchRetries.delete(safeProjectPath);
-
-          return res.status(400).json({
-            error: 'Tasks directory not accessible',
-            message: `No tasks directory found at ${dir}. Maximum retry attempts exceeded.`,
-            watching: false,
-            suggestion: 'Please create a \'tasks\' directory in your project.',
-          });
+            watchRetries.delete(safeProjectPath);
+            return res.status(400).json({
+                error: 'Tasks directory not accessible',
+                message: `No tasks directory found in any of the expected locations. Maximum retry attempts exceeded.`,
+                watching: false,
+                suggestion: 'Please create a \'tasks\' or \'.taskmaster/tasks\' directory in your project.',
+            });
         }
 
-        // Increment retry count
         watchRetries.set(safeProjectPath, retryCount + 1);
 
         return res.status(404).json({
-          error: 'Tasks directory not accessible',
-          message: `No tasks directory found at ${dir}`,
-          watching: false,
-          retryCount: retryCount + 1,
-          maxRetries: MAX_RETRY_ATTEMPTS,
-          suggestion: 'Create a \'tasks\' directory in your project root to enable file watching.'
+            error: 'Tasks directory not accessible',
+            message: `No tasks directory found in any of the expected locations.`,
+            watching: false,
+            retryCount: retryCount + 1,
+            maxRetries: MAX_RETRY_ATTEMPTS,
+            suggestion: 'Create a \'tasks\' or \'.taskmaster/tasks\' directory in your project root to enable file watching.',
         });
-      }
-    });
+    }
+
+    // Watch the existing directories
+    directoriesToWatch = existingDirs;
 
     watchRetries.delete(safeProjectPath);
 
@@ -433,121 +568,150 @@ async function loadTasksFromPath(projectPath) {
     throw new Error(`Path validation failed: ${validationError.message}`);
   }
   
-  // Use the resolver utility to determine paths and mode
+  // Use the resolver utility to determine paths
   const paths = resolveTaskmasterPaths(safeProjectPath);
   
-  // Check if tasks directory/file exists
-  if (!fs.existsSync(paths.tasksJson)) {
+  // Check if .taskmaster exists
+  if (!paths.exists) {
     return { 
       tasks: [], 
       projectPath: safeProjectPath,
       mode: paths.mode,
-      message: `No tasks file found at ${paths.tasksJson}`
+      message: `No .taskmaster directory found. Please ensure this is a valid TaskMaster project.`
     };
   }
   
   let tasks = [];
   let config = null;
+  let state = null;
   let report = null;
+  let currentTag = 'master'; // default tag
   
-  // Load tasks.json
-  try {
-    const tasksJsonData = await fs.readFile(paths.tasksJson, 'utf8');
-    const parsedData = JSON.parse(tasksJsonData);
-    tasks = parsedData.tasks || parsedData || [];
-  } catch (error) {
-    console.warn(`Failed to read tasks.json: ${error.message}`);
-    
-    // Fallback: scan for individual task files (legacy behavior)
-    if (fs.existsSync(paths.tasksDir)) {
-      const taskFiles = await fs.readdir(paths.tasksDir);
-      let taskId = 1;
+  // Load state.json to determine current tag
+  if (paths.stateJson && fs.existsSync(paths.stateJson)) {
+    try {
+      const stateData = await fs.readFile(paths.stateJson, 'utf8');
+      state = JSON.parse(stateData);
+      currentTag = state.currentTag || 'master';
+      console.log(`Current TaskMaster tag: ${currentTag}`);
+    } catch (error) {
+      console.warn(`Failed to read state.json: ${error.message}`);
+    }
+  }
+  
+  // Load tasks.json which contains multi-tag structure
+  let parsedData = null;
+  if (fs.existsSync(paths.tasksJson)) {
+    try {
+      console.log(`Loading tasks.json from: ${paths.tasksJson}`);
+      const tasksJsonData = await fs.readFile(paths.tasksJson, 'utf8');
+      parsedData = JSON.parse(tasksJsonData);
       
-      for (const file of taskFiles) {
-        // Validate file name to prevent path traversal
-        if (!file || file.includes('..') || file.includes('/') || file.includes('\\')) {
-          console.warn(`Skipping potentially unsafe file name: ${file}`);
-          continue;
+      // New multi-tag structure
+      if (parsedData[currentTag]) {
+        const tagData = parsedData[currentTag];
+        tasks = tagData.tasks || [];
+        console.log(`Loaded ${tasks.length} tasks for tag '${currentTag}'`);
+      } else {
+        console.warn(`No tasks found for tag '${currentTag}' in tasks.json`);
+        // Try to fallback to 'master' tag
+        if (parsedData.master) {
+          tasks = parsedData.master.tasks || [];
+          console.log(`Fallback: Loaded ${tasks.length} tasks from 'master' tag`);
         }
-        
-        if (file.startsWith('task_') && (file.endsWith('.txt') || file.endsWith('.md'))) {
-          try {
-            const filePath = path.join(paths.tasksDir, file);
-            // Validate the full file path
-            const safeFilePath = PathValidator.validatePath(filePath);
-            
-            // Ensure the file is still within the tasks directory after validation
-            if (!safeFilePath.startsWith(paths.tasksDir)) {
-              console.warn(`File path validation failed - outside tasks directory: ${file}`);
-              continue;
-            }
-            
-            const content = await fs.readFile(safeFilePath, 'utf8');
-            
-            // Parse task content - look for basic structure
-            const lines = content.split('\n').filter(line => line.trim());
-            const title = lines[0] || file.replace(/\.(txt|md)$/, '');
-            const description = lines.slice(1).join('\n').trim() || 'No description available';
-            
-            tasks.push({
-              id: taskId++,
-              title: title.replace(/^#*\s*/, ''), // Remove markdown headers
-              description: description,
-              status: 'pending',
-              dependencies: [], // Could be parsed from content later
-              filePath: safeFilePath,
-              fileName: file
-            });
-          } catch (fileError) {
-            console.warn(`Failed to read task file ${file}:`, fileError.message);
+      }
+    } catch (error) {
+      console.error(`Failed to read or parse tasks.json: ${error.message}`);
+      throw new Error(`Failed to load tasks: ${error.message}`);
+    }
+  } else {
+    throw new Error(`No tasks.json found at ${paths.tasksJson}`);
+  }
+  
+  // Process subtasks to ensure they have proper structure
+  tasks = tasks.map(task => {
+    // Process subtasks if they exist
+    if (task.subtasks && Array.isArray(task.subtasks)) {
+      task.subtasks = task.subtasks.map((subtask, index) => {
+        // Ensure subtask has all required fields
+        return {
+          id: subtask.id || index + 1,
+          title: subtask.title || 'Untitled Subtask',
+          description: subtask.description || '',
+          status: subtask.status || 'pending',
+          dependencies: subtask.dependencies || [],
+          details: subtask.details || '',
+          priority: subtask.priority || task.priority || 'medium'
+        };
+      });
+    }
+    
+    // Ensure task has all required properties
+    return {
+      ...task,
+      subtasks: task.subtasks || [],
+      dependencies: task.dependencies || [],
+      status: task.status || 'pending',
+      priority: task.priority || 'medium',
+      description: task.description || 'No description available',
+      details: task.details || '',
+      testStrategy: task.testStrategy || ''
+    };
+  });
+  
+  // Load config.json
+  if (paths.configJson && fs.existsSync(paths.configJson)) {
+    try {
+      const configData = await fs.readFile(paths.configJson, 'utf8');
+      config = JSON.parse(configData);
+      
+      // Transform config to match expected format for UI
+      // Extract model names from the models object
+      if (config.models) {
+        const modelNames = [];
+        for (const [role, modelConfig] of Object.entries(config.models)) {
+          if (modelConfig && modelConfig.modelId) {
+            modelNames.push(`${role}: ${modelConfig.modelId}`);
           }
         }
+        config.modelNames = modelNames; // For UI display
       }
+    } catch (error) {
+      console.warn(`Failed to read config.json: ${error.message}`);
     }
   }
   
-  // For v2 mode, load additional files
-  if (paths.mode === 'v2') {
-    // Load config.json if it exists
-    if (paths.configJson && fs.existsSync(paths.configJson)) {
-      try {
-        const configData = await fs.readFile(paths.configJson, 'utf8');
-        config = JSON.parse(configData);
-      } catch (error) {
-        console.warn(`Failed to read config.json: ${error.message}`);
+  // Load the latest report from reports/ directory
+  if (paths.reportsDir && fs.existsSync(paths.reportsDir)) {
+    try {
+      const reportFiles = await fs.readdir(paths.reportsDir);
+      const jsonReports = reportFiles
+        .filter(file => file.endsWith('.json'))
+        .map(file => ({
+          name: file,
+          path: path.join(paths.reportsDir, file),
+          stats: fs.statSync(path.join(paths.reportsDir, file))
+        }))
+        .sort((a, b) => b.stats.mtime - a.stats.mtime); // Sort by modification time, newest first
+      
+      if (jsonReports.length > 0) {
+        const latestReport = jsonReports[0];
+        const reportData = await fs.readFile(latestReport.path, 'utf8');
+        report = JSON.parse(reportData);
       }
-    }
-    
-    // Load the latest report from reports/ directory if it exists
-    if (paths.reportsDir && fs.existsSync(paths.reportsDir)) {
-      try {
-        const reportFiles = await fs.readdir(paths.reportsDir);
-        const jsonReports = reportFiles
-          .filter(file => file.endsWith('.json'))
-          .map(file => ({
-            name: file,
-            path: path.join(paths.reportsDir, file),
-            stats: fs.statSync(path.join(paths.reportsDir, file))
-          }))
-          .sort((a, b) => b.stats.mtime - a.stats.mtime); // Sort by modification time, newest first
-        
-        if (jsonReports.length > 0) {
-          const latestReport = jsonReports[0];
-          const reportData = await fs.readFile(latestReport.path, 'utf8');
-          report = JSON.parse(reportData);
-        }
-      } catch (error) {
-        console.warn(`Failed to read reports: ${error.message}`);
-      }
+    } catch (error) {
+      console.warn(`Failed to read reports: ${error.message}`);
     }
   }
-  
   
   return {
     tasks: tasks,
     projectPath: safeProjectPath,
     mode: paths.mode,
+    currentTag: currentTag,
+    availableTags: parsedData ? Object.keys(parsedData) : ['master'],
     ...(config && { config }),
+    ...(state && { state }),
     ...(report && { report })
   };
 }
@@ -667,7 +831,8 @@ app.get('/api/tasks', async (req, res) => {
 app.get('/api/drives', async (req, res) => {
   try {
     const platform = process.platform;
-    const homeDir = require('os').homedir();
+    const os = await import('os');
+    const homeDir = os.homedir();
     
     if (platform === 'win32') {
       // Windows: Get available drives
@@ -907,9 +1072,10 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`\n🚀 TaskMaster Visualizer Server`);
-  console.log(`📡 Running on: http://localhost:${PORT}`);
+  console.log(`\n🚀 TaskMaster Visualizer API Server`);
+  console.log(`📡 API running on: http://localhost:${PORT}`);
   console.log(`⚡ Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`📁 Serving from: ${distPath}`);
-  console.log(`\n🔗 Open http://localhost:${PORT} in your browser\n`);
+  console.log(`\n⚠️  This is the API server. To view the app:`);
+  console.log(`🔗 Open http://localhost:5551 in your browser (Vite dev server)\n`);
 });

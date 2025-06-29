@@ -36,7 +36,6 @@ function Flow() {
     tasks,
     nodes, 
     edges, 
-    loadTasks, 
     loadTasksFromPath,
     selectedTaskId, 
     selectTask, 
@@ -47,13 +46,19 @@ function Flow() {
     projectPath,
     isLoading,
     error,
+    clearError,
+    // New API response properties
+    mode,
+    config,
+    report,
+    currentTag,
+    availableTags,
     // New dark mode and position features
     theme,
     isDarkMode,
     setTheme,
     updateNodePosition,
     lastViewport,
-    setLastViewport,
     // Project name features
     projectName,
     setProjectName,
@@ -85,6 +90,31 @@ function Flow() {
   const [showFileBrowser, setShowFileBrowser] = useState(false);
   const [isEditingProjectName, setIsEditingProjectName] = useState(false);
   const [editingProjectName, setEditingProjectName] = useState('');
+
+  // One-time cleanup of problematic localStorage data
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const storedPath = localStorage.getItem('taskmaster-project-path');
+      if (storedPath) {
+        const normalizedPath = storedPath.toLowerCase().replace(/\\/g, '/');
+        
+        // Check if the stored path is problematic
+        if (normalizedPath === '/users' || 
+            normalizedPath === '/users/' ||
+            normalizedPath === '/users/jason' ||
+            normalizedPath === '/users/jason/' ||
+            normalizedPath.includes('/ai/tmvisuals') ||
+            normalizedPath === '/' ||
+            normalizedPath === '/home' ||
+            normalizedPath === '/home/') {
+          console.warn('Clearing problematic stored project path on startup:', storedPath);
+          localStorage.removeItem('taskmaster-project-path');
+          // Force a reload to clear any cached state
+          window.location.reload();
+        }
+      }
+    }
+  }, []); // Run only once on mount
 
   // Set up viewport manager with ReactFlow instance
   useEffect(() => {
@@ -167,12 +197,29 @@ function Flow() {
     console.log(`Enhanced highlighting enabled for ${activeTasks.length} active tasks`);
   }, [flowNodes, focusOnActiveTask]);
 
-  // Auto-load tasks from saved project path on startup
+  // Auto-load tasks from saved project path on startup, or show file browser
   useEffect(() => {
+    // Don't do anything if file browser is already open
+    if (showFileBrowser) {
+      return;
+    }
+
+    // If there's an error and file browser is not open, open it
+    if (error && !showFileBrowser) {
+      setShowFileBrowser(true);
+      // Don't clear the error here - let the FileBrowser component handle it
+      return;
+    }
+
+    // If a valid project path is stored, load tasks from it.
     if (projectPath && tasks.length === 0 && !isLoading) {
       loadTasksFromPath(projectPath);
+    } 
+    // If no project path is set and we are not loading, show the file browser.
+    else if (!projectPath && !isLoading) {
+      setShowFileBrowser(true);
     }
-  }, [projectPath, tasks.length, isLoading, loadTasksFromPath]);
+  }, [projectPath, tasks.length, isLoading, loadTasksFromPath, error, showFileBrowser]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -191,40 +238,7 @@ function Flow() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectTask]);
 
-  // Load default tasks if no project path is set
-  useEffect(() => {
-    if (!projectPath) {
-      console.log('Attempting to load default tasks...');
-      
-      const loadDefaultTasks = async () => {
-        try {
-          const res = await fetch('/tasks/tasks.json');
-          console.log('Fetch response:', res.status, res.ok);
-          
-          if (!res.ok) {
-            throw new Error(`Failed to fetch default tasks: ${res.status}`);
-          }
-          
-          const data = await res.json();
-          
-          if (!data || typeof data !== 'object') {
-            throw new Error('Invalid tasks data format');
-          }
-          
-          console.log('Tasks data loaded:', data);
-          console.log('Number of tasks:', data.tasks?.length);
-          
-          const tasks = Array.isArray(data.tasks) ? data.tasks : [];
-          loadTasks(tasks);
-        } catch (err) {
-          console.error('Failed to load default tasks:', err);
-          // Don't set error state for default tasks failing - just log it
-        }
-      };
-      
-      loadDefaultTasks();
-    }
-  }, [loadTasks, projectPath]);
+  
 
   const handleSelectProjectPath = async (path: string) => {
     try {
@@ -233,7 +247,12 @@ function Flow() {
         return;
       }
       
+      // Clear any existing error before attempting to load
+      clearError();
+      
       await loadTasksFromPath(path.trim());
+      // Close the file browser on successful load
+      setShowFileBrowser(false);
     } catch (error) {
       console.error('Failed to load tasks from selected path:', error);
       // Error handling is done in the store, just log here
@@ -259,9 +278,10 @@ function Flow() {
   }, [onNodesChange, updateNodePosition]);
 
   // Handle viewport changes to persist zoom/pan state
-  const handleMove = useCallback((_: any, viewport: Viewport) => {
-    setLastViewport(viewport);
-  }, [setLastViewport]);
+  const handleMove = useCallback((_: any, _viewport: Viewport) => {
+    // Temporarily disabled viewport saving for performance
+    // setLastViewport(viewport);
+  }, []);
 
   // Project name editing handlers
   const handleStartEditingProjectName = () => {
@@ -376,8 +396,8 @@ function Flow() {
         </div>
       )}
 
-      {/* Error display */}
-      {error && (
+      {/* Error display - only show if file browser is not open */}
+      {error && !showFileBrowser && (
         <div className={`absolute top-20 left-1/2 transform -translate-x-1/2 px-4 py-3 rounded-lg shadow-lg z-40 max-w-lg ${
           isDarkMode 
             ? 'bg-red-900 border border-red-700 text-red-200'
@@ -388,7 +408,10 @@ function Flow() {
             <div className="mb-2">{error}</div>
             <div className="flex gap-2">
               <button
-                onClick={() => setShowFileBrowser(true)}
+                onClick={() => {
+                  clearError();
+                  setShowFileBrowser(true);
+                }}
                 className={`px-3 py-1 text-xs rounded transition-colors ${
                   isDarkMode
                     ? 'bg-red-800 hover:bg-red-700 text-red-200'
@@ -399,7 +422,10 @@ function Flow() {
               </button>
               {projectPath && (
                 <button
-                  onClick={handleRefreshTasks}
+                  onClick={() => {
+                    clearError();
+                    handleRefreshTasks();
+                  }}
                   className={`px-3 py-1 text-xs rounded transition-colors ${
                     isDarkMode
                       ? 'bg-red-800 hover:bg-red-700 text-red-200'
@@ -415,10 +441,13 @@ function Flow() {
       )}
 
       {/* No Tasks Found State */}
-      {showNoTasksFound && (
+      {showNoTasksFound && !showFileBrowser && (
         <div className="absolute inset-0 z-30">
           <NoTasksFound 
-            onSelectFolder={() => setShowFileBrowser(true)}
+            onSelectFolder={() => {
+              clearError();
+              setShowFileBrowser(true);
+            }}
             onRefresh={handleRefreshTasks}
             projectPath={projectPath}
           />
@@ -641,6 +670,47 @@ function Flow() {
                 </button>
               </div>
             )}
+            {/* New info display for mode, config, and report */}
+            {mode && (
+              <div className={`text-xs text-center mt-2 ${
+                isDarkMode ? 'text-gray-400' : 'text-gray-500'
+              }`}> 
+                Mode: {mode}
+              </div>
+            )}
+            {/* Display current tag and available tags */}
+            {currentTag && (
+              <div className={`text-xs text-center mt-1 ${
+                isDarkMode ? 'text-gray-400' : 'text-gray-500'
+              }`}>
+                Current Tag: <span className="font-semibold">{currentTag}</span>
+                {availableTags && availableTags.length > 1 && (
+                  <span className="ml-2">
+                    (Available: {availableTags.join(', ')})
+                  </span>
+                )}
+              </div>
+            )}
+            {config && config.modelNames && Array.isArray(config.modelNames) && (
+              <div className={`text-xs text-center mt-1 ${
+                isDarkMode ? 'text-gray-400' : 'text-gray-500'
+              }`}>
+                Models: {config.modelNames.join(', ')}
+              </div>
+            )}
+            {report?.link && (
+              <div className="flex justify-center mt-1">
+                <a 
+                  href={report.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`px-2 py-1 text-xs rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors`} 
+                >
+                  View Complexity Report
+                </a>
+              </div>
+            )}
+            {/* End of New Info */}
             
             {/* Live Update Indicator */}
             {projectPath && (
@@ -687,8 +757,12 @@ function Flow() {
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}
       <FileBrowser
         isOpen={showFileBrowser}
-        onClose={() => setShowFileBrowser(false)}
         onSelectPath={handleSelectProjectPath}
+        onClose={() => {
+          setShowFileBrowser(false);
+          // Clear any errors when closing the file browser to prevent it from reopening
+          clearError();
+        }}
       />
     </div>
   );

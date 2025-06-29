@@ -86,8 +86,10 @@ function startServer() {
       console.log(`\n🔗 Open your browser to: http://localhost:${port}`);
       console.log('\n📋 Instructions:');
       console.log('   1. Use the file browser to navigate to your project directory');
-      console.log('   2. Select a directory containing a "tasks/" folder');
-      console.log('   3. Your TaskMaster tasks will be visualized automatically');
+      console.log('   2. Select a directory containing a ".taskmaster/tasks/" folder');
+      console.log('   3. Legacy "tasks/" folders are still supported but will be migrated');
+      console.log('   4. AI model config is loaded from ".taskmaster/config.json"');
+      console.log('   5. Your TaskMaster tasks will be visualized automatically');
       console.log('\n⚡ Press Ctrl+C to stop the server\n');
       
       resolve();
@@ -140,6 +142,10 @@ Features:
 
 The visualizer will start a web server and open a file browser to help you
 navigate to your TaskMaster project directory.
+
+Tasks are now stored in .taskmaster/tasks/tasks.json; legacy tasks/tasks.json
+projects are still supported but will be migrated in a future release.
+AI model configuration is loaded from .taskmaster/config.json.
       `);
       process.exit(0);
     }

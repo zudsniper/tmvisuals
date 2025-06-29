@@ -2,17 +2,26 @@ import path from 'path';
 import fs from 'fs';
 
 export function resolveTaskmasterPaths(projectRoot) {
-  const newRoot = path.join(projectRoot, '.taskmaster');
-  const legacyRoot = path.join(projectRoot, 'tasks');        // legacy only has tasks
-  const hasNew = fs.existsSync(path.join(newRoot, 'tasks', 'tasks.json'));
-  const hasLegacy = fs.existsSync(path.join(legacyRoot, 'tasks.json'));
+  const taskmasterRoot = path.join(projectRoot, '.taskmaster');
+  
+  // Always use .taskmaster structure (no legacy support)
+  const tasksDir = path.join(taskmasterRoot, 'tasks');
+  const tasksJson = path.join(taskmasterRoot, 'tasks', 'tasks.json');
+  const configJson = path.join(taskmasterRoot, 'config.json');
+  const stateJson = path.join(taskmasterRoot, 'state.json');
+  const reportsDir = path.join(taskmasterRoot, 'reports');
+  
+  // Check if .taskmaster exists
+  const exists = fs.existsSync(taskmasterRoot);
+  
   return {
-    mode: hasNew ? 'v2' : 'legacy',
-    root: hasNew ? newRoot : legacyRoot,
-    tasksDir: hasNew ? path.join(newRoot, 'tasks') : legacyRoot,
-    tasksJson: hasNew ? path.join(newRoot, 'tasks', 'tasks.json')
-                      : path.join(legacyRoot, 'tasks.json'),
-    configJson: hasNew ? path.join(newRoot, 'config.json') : null,
-    reportsDir: hasNew ? path.join(newRoot, 'reports') : null
+    mode: 'taskmaster', // Single mode now
+    root: taskmasterRoot,
+    tasksDir: tasksDir,
+    tasksJson: tasksJson,
+    configJson: configJson,
+    stateJson: stateJson,
+    reportsDir: reportsDir,
+    exists: exists
   };
 }

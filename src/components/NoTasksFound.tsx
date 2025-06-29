@@ -178,7 +178,7 @@ export const NoTasksFound: React.FC<NoTasksFoundProps> = ({
             isDarkMode ? 'text-gray-300' : 'text-gray-600'
           }`}>
             {projectPath 
-              ? `We couldn't find any tasks in the selected project folder.`
+              ? `We couldn't find any tasks in the .taskmaster/tasks/ directory of the selected project.`
               : 'Please select a project folder to get started with task visualization.'
             }
           </p>
@@ -257,7 +257,8 @@ export const NoTasksFound: React.FC<NoTasksFoundProps> = ({
                 <p className={`text-sm ${
                   isDarkMode ? 'text-gray-400' : 'text-gray-600'
                 }`}>
-                  Click the refresh button or reload the project to see your tasks
+                  Click the refresh button or reload the project to see your tasks.
+                  Note: Tasks are stored in `.taskmaster/tasks/tasks.json`. Legacy `tasks/tasks.json` projects are still supported but will be migrated in a future release.
                 </p>
               </div>
             </div>

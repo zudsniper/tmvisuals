@@ -138,7 +138,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
               <div className="mt-4 text-xs text-gray-500 dark:text-gray-400">
                 <p>If this error persists, please:</p>
                 <ul className="list-disc list-inside mt-1 space-y-1">
-                  <li>Check your project's tasks directory structure</li>
+                  <li>Check your project's .taskmaster/tasks/ directory structure</li>
                   <li>Ensure file permissions are correct</li>
                   <li>Try selecting a different project directory</li>
                   <li>Check the browser console for additional details</li>

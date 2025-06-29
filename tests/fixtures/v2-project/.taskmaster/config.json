@@ -1,0 +1,14 @@
+{
+  "version": "2.0",
+  "projectName": "V2 Test Project",
+  "features": {
+    "reports": true,
+    "config": true,
+    "hierarchicalTasks": true
+  },
+  "settings": {
+    "autoSave": true,
+    "defaultStatus": "pending",
+    "allowSubtasks": true
+  }
+}

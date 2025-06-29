@@ -20,6 +20,13 @@ interface TaskStore {
   isLoading: boolean;
   error: string | null;
   
+  // New API response properties
+  mode: string | null;
+  config: any | null;
+  report: any | null;
+  currentTag: string | null;
+  availableTags: string[];
+  
   // New features
   theme: ThemeMode;
   isDarkMode: boolean;
@@ -69,6 +76,7 @@ interface TaskStore {
   setSearchQuery: (query: string) => void;
   setLayoutMode: (mode: LayoutMode) => void;
   setProjectPath: (path: string | null) => void;
+  clearError: () => void;
   
   // New actions
   setTheme: (theme: ThemeMode) => void;
@@ -432,7 +440,6 @@ const VIEWPORT_STORAGE_KEY = 'taskmaster-viewport';
 const PROJECT_NAME_STORAGE_KEY = 'taskmaster-project-name';
 const FOCUS_ON_ACTIVE_TASK_KEY = 'taskmaster-focus-on-active-task';
 const DYNAMIC_LAYOUT_STORAGE_KEY = 'taskmaster-dynamic-layout';
-const DEFAULT_START_PATH_KEY = 'taskmaster-default-start-path';
 
 // Dark mode detection
 const getSystemTheme = (): 'light' | 'dark' => {
@@ -440,27 +447,41 @@ const getSystemTheme = (): 'light' | 'dark' => {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 };
 
-// Get the user's home directory for the default start path
-const getHomeDirectory = (): string => {
-  if (typeof window === 'undefined') {
-    // Server-side: prioritize HOME environment variable for Linux
-    return process.env.HOME || '/';
-  }
-  // Client-side: Check for saved custom start path first
-  const savedPath = localStorage.getItem(DEFAULT_START_PATH_KEY);
-  if (savedPath && savedPath.trim()) {
-    return savedPath;
-  }
-  // Fallback to root for Linux systems
-  return '/';
-};
-
 const loadProjectPathFromStorage = (): string | null => {
   if (typeof window === 'undefined') return null;
   try {
-    return localStorage.getItem(STORAGE_KEY);
+    const stored = localStorage.getItem(STORAGE_KEY);
+    // Basic validation: ensure it's a non-empty string
+    if (stored && typeof stored === 'string') {
+      // Additional validation: prevent loading from the app's own directory or parent directories
+      const currentUrl = window.location.href;
+      const isLocalDev = currentUrl.includes('localhost') || currentUrl.includes('127.0.0.1');
+      
+      if (isLocalDev) {
+        // In development, check if the stored path might conflict with the app itself
+        const normalizedPath = stored.toLowerCase().replace(/\\/g, '/');
+        
+        // Clear the stored path if it appears to be pointing to a system directory or the app itself
+        if (normalizedPath === '/users' || 
+            normalizedPath === '/users/' ||
+            normalizedPath === '/users/jason' ||
+            normalizedPath === '/users/jason/' ||
+            normalizedPath.includes('/ai/tmvisuals') ||
+            normalizedPath === '/' ||
+            normalizedPath === '/home' ||
+            normalizedPath === '/home/') {
+          console.warn('Clearing potentially problematic stored project path:', stored);
+          localStorage.removeItem(STORAGE_KEY);
+          return null;
+        }
+      }
+      
+      return stored;
+    }
+    return null;
   } catch (error) {
     console.warn('Failed to load project path from localStorage:', error);
+    localStorage.removeItem(STORAGE_KEY); // Clear corrupted data
     return null;
   }
 };
@@ -469,9 +490,14 @@ const loadThemeFromStorage = (): ThemeMode => {
   if (typeof window === 'undefined') return 'system';
   try {
     const stored = localStorage.getItem(THEME_STORAGE_KEY) as ThemeMode;
-    return stored || 'system';
+    // Validate theme value
+    if (stored && ['light', 'dark', 'system'].includes(stored)) {
+      return stored;
+    }
+    return 'system';
   } catch (error) {
     console.warn('Failed to load theme from localStorage:', error);
+    localStorage.removeItem(THEME_STORAGE_KEY); // Clear corrupted data
     return 'system';
   }
 };
@@ -482,10 +508,14 @@ const loadCustomPositions = (): Map<string, { x: number; y: number }> => {
     const stored = localStorage.getItem(POSITIONS_STORAGE_KEY);
     if (stored) {
       const parsed = JSON.parse(stored);
-      return new Map(parsed);
+      // Validate that it's an array of pairs before creating the Map
+      if (Array.isArray(parsed)) {
+        return new Map(parsed);
+      }
     }
   } catch (error) {
     console.warn('Failed to load positions from localStorage:', error);
+    localStorage.removeItem(POSITIONS_STORAGE_KEY); // Clear corrupted data
   }
   return new Map();
 };
@@ -494,9 +524,17 @@ const loadLastViewport = (): Viewport | null => {
   if (typeof window === 'undefined') return null;
   try {
     const stored = localStorage.getItem(VIEWPORT_STORAGE_KEY);
-    return stored ? JSON.parse(stored) : null;
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      // Basic validation for viewport object
+      if (parsed && typeof parsed.x === 'number' && typeof parsed.y === 'number' && typeof parsed.zoom === 'number') {
+        return parsed;
+      }
+    }
+    return null;
   } catch (error) {
     console.warn('Failed to load viewport from localStorage:', error);
+    localStorage.removeItem(VIEWPORT_STORAGE_KEY); // Clear corrupted data
     return null;
   }
 };
@@ -504,9 +542,14 @@ const loadLastViewport = (): Viewport | null => {
 const loadProjectNameFromStorage = (): string | null => {
   if (typeof window === 'undefined') return null;
   try {
-    return localStorage.getItem(PROJECT_NAME_STORAGE_KEY);
+    const stored = localStorage.getItem(PROJECT_NAME_STORAGE_KEY);
+    if (stored && typeof stored === 'string') {
+      return stored;
+    }
+    return null;
   } catch (error) {
     console.warn('Failed to load project name from localStorage:', error);
+    localStorage.removeItem(PROJECT_NAME_STORAGE_KEY); // Clear corrupted data
     return null;
   }
 };
@@ -515,9 +558,16 @@ const loadFocusOnActiveTaskFromStorage = (): boolean => {
   if (typeof window === 'undefined') return true; // Default to true
   try {
     const stored = localStorage.getItem(FOCUS_ON_ACTIVE_TASK_KEY);
-    return stored !== null ? JSON.parse(stored) : true; // Default to true
+    if (stored !== null) {
+      const parsed = JSON.parse(stored);
+      if (typeof parsed === 'boolean') {
+        return parsed;
+      }
+    }
+    return true; // Default to true
   } catch (error) {
     console.warn('Failed to load focus on active task setting from localStorage:', error);
+    localStorage.removeItem(FOCUS_ON_ACTIVE_TASK_KEY); // Clear corrupted data
     return true;
   }
 };
@@ -526,9 +576,16 @@ const loadDynamicLayoutFromStorage = (): boolean => {
   if (typeof window === 'undefined') return false; // Default to false for stability
   try {
     const stored = localStorage.getItem(DYNAMIC_LAYOUT_STORAGE_KEY);
-    return stored !== null ? JSON.parse(stored) : false; // Default to false
+    if (stored !== null) {
+      const parsed = JSON.parse(stored);
+      if (typeof parsed === 'boolean') {
+        return parsed;
+      }
+    }
+    return false; // Default to false
   } catch (error) {
     console.warn('Failed to load dynamic layout setting from localStorage:', error);
+    localStorage.removeItem(DYNAMIC_LAYOUT_STORAGE_KEY); // Clear corrupted data
     return false;
   }
 };
@@ -857,9 +914,16 @@ export const useTaskStore = create<TaskStore>((set, get) => {
     editorPreference: 'cursor',
     searchQuery: '',
     layoutMode: 'grid',
-    projectPath: loadProjectPathFromStorage() || getHomeDirectory(),
+    projectPath: loadProjectPathFromStorage(),
     isLoading: false,
     error: null,
+    
+    // New API response properties
+    mode: null,
+    config: null,
+    report: null,
+    currentTag: null,
+    availableTags: [],
     
     // New features
     theme: initialTheme,
@@ -902,6 +966,14 @@ export const useTaskStore = create<TaskStore>((set, get) => {
     loadTasks: (tasks) => {
       console.log('loadTasks called with:', tasks);
       console.log('Number of tasks to load:', tasks?.length);
+      
+      // Ensure tasks is a valid array
+      if (!Array.isArray(tasks)) {
+        console.error('loadTasks called with non-array:', tasks);
+        set({ tasks: [], nodes: [], edges: [], error: 'Invalid tasks data: expected an array' });
+        return;
+      }
+      
       const { layoutMode, customPositions, dynamicLayout, forceLayout } = get();
       
       // Track active task for dynamic layout
@@ -921,7 +993,25 @@ export const useTaskStore = create<TaskStore>((set, get) => {
       set({ isLoading: true, error: null });
       
       try {
-        const response = await fetch(`/api/tasks?projectPath=${encodeURIComponent(projectPath)}`);
+        // Validate the path before making the request
+        if (!projectPath || projectPath.trim().length === 0) {
+          throw new Error('Invalid project path: path is empty');
+        }
+        
+        const trimmedPath = projectPath.trim();
+        
+        // Check if the path might cause issues with watch mode
+        const normalizedPath = trimmedPath.toLowerCase().replace(/\\/g, '/');
+        if (normalizedPath === '/users' || 
+            normalizedPath === '/users/' ||
+            normalizedPath.includes('/ai/tmvisuals') ||
+            normalizedPath === '/' ||
+            normalizedPath === '/home' ||
+            normalizedPath === '/home/') {
+          throw new Error('Invalid project path: cannot load tasks from system directories or the application directory');
+        }
+        
+        const response = await fetch(`/api/tasks?projectPath=${encodeURIComponent(trimmedPath)}`);
         
         if (!response.ok) {
           const errorData = await response.json();
@@ -929,7 +1019,30 @@ export const useTaskStore = create<TaskStore>((set, get) => {
         }
         
         const tasksData = await response.json();
-        const tasks: Task[] = tasksData.tasks || [];
+        
+        // Handle both new response shape (with mode) and legacy response (tasks only)
+        const isNewResponseShape = 'mode' in tasksData;
+        
+        // Ensure tasks is always a valid array
+        let tasks: Task[] = [];
+        if (isNewResponseShape && Array.isArray(tasksData.tasks)) {
+          tasks = tasksData.tasks;
+        } else if (!isNewResponseShape && Array.isArray(tasksData)) {
+          // Legacy: entire response is the tasks array
+          tasks = tasksData;
+        } else if (!isNewResponseShape && tasksData && Array.isArray(tasksData.tasks)) {
+          // Legacy: response has tasks property
+          tasks = tasksData.tasks;
+        } else {
+          console.error('Invalid tasks data format:', tasksData);
+          throw new Error('Invalid task data format received from server');
+        }
+        
+        const mode = isNewResponseShape ? tasksData.mode : 'v1';
+        const config = isNewResponseShape ? tasksData.config : null;
+        const report = isNewResponseShape ? tasksData.report : null;
+        const currentTag = isNewResponseShape ? (tasksData.currentTag || 'master') : 'master';
+        const availableTags = isNewResponseShape ? (tasksData.availableTags || ['master']) : ['master'];
         
         const { layoutMode, customPositions, dynamicLayout, forceLayout } = get();
         
@@ -946,28 +1059,33 @@ export const useTaskStore = create<TaskStore>((set, get) => {
         const currentProjectName = get().projectName;
         let newProjectName = currentProjectName;
         if (!currentProjectName) {
-          newProjectName = extractProjectName(projectPath);
+          newProjectName = extractProjectName(trimmedPath);
         }
         
         set({ 
           tasks, 
           nodes, 
           edges, 
-          projectPath, 
+          projectPath: trimmedPath, 
           projectName: newProjectName,
           isLoading: false, 
           error: null,
-          currentActiveTaskId: activeTaskId 
+          currentActiveTaskId: activeTaskId,
+          mode,
+          config,
+          report,
+          currentTag,
+          availableTags
         });
         
         // Save to localStorage after successful load
-        saveProjectPathToStorage(projectPath);
+        saveProjectPathToStorage(trimmedPath);
         if (!currentProjectName) {
           saveProjectNameToStorage(newProjectName);
         }
         
         // Start watching project for live updates
-        get().startWatchingProject(projectPath);
+        get().startWatchingProject(trimmedPath);
         
       } catch (error) {
         console.error('Failed to load tasks:', error);
@@ -977,8 +1095,10 @@ export const useTaskStore = create<TaskStore>((set, get) => {
         if (error instanceof Error) {
           const errorMessage = error.message;
           
-          if (errorMessage.includes('tasks directory not found') || errorMessage.includes('No tasks directory')) {
-            userFriendlyError = `No tasks directory found in the selected project.\n\nTo get started:\n• Create a 'tasks' folder in your project root\n• Add a tasks.json file or individual task files\n• Refresh to see your tasks`;
+          if (errorMessage.includes('Invalid project path')) {
+            userFriendlyError = errorMessage;
+          } else if (errorMessage.includes('tasks directory not found') || errorMessage.includes('No tasks directory')) {
+            userFriendlyError = `No tasks directory found in the selected project.\n\nTo get started:\n• Create a '.taskmaster/tasks' folder in your project root\n• Add a tasks.json file or individual task files\n• Refresh to see your tasks`;
           } else if (errorMessage.includes('Permission denied') || errorMessage.includes('EACCES')) {
             userFriendlyError = `Permission denied accessing the project folder.\n\nPlease check that you have read access to the directory and try selecting a different folder.`;
           } else if (errorMessage.includes('Network') || errorMessage.includes('fetch')) {
@@ -990,12 +1110,16 @@ export const useTaskStore = create<TaskStore>((set, get) => {
           }
         }
         
+        // Clear the invalid project path to prevent reload loops
+        saveProjectPathToStorage(null);
+
         set({ 
           isLoading: false, 
           error: userFriendlyError,
           tasks: [],
           nodes: [],
-          edges: []
+          edges: [],
+          projectPath: null // Also clear it from the state
         });
       }
     },
@@ -1174,10 +1298,24 @@ export const useTaskStore = create<TaskStore>((set, get) => {
       saveCustomPositions(newPositions);
     },
     
-    setLastViewport: (viewport) => {
-      set({ lastViewport: viewport });
-      saveLastViewport(viewport);
-    },
+    setLastViewport: (() => {
+      let timeoutId: NodeJS.Timeout | null = null;
+      
+      return (viewport: Viewport) => {
+        // Update the state immediately for smooth UI
+        set({ lastViewport: viewport });
+        
+        // Debounce the localStorage save to avoid blocking the UI
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
+        
+        timeoutId = setTimeout(() => {
+          saveLastViewport(viewport);
+          timeoutId = null;
+        }, 500); // Save after 500ms of no movement
+      };
+    })(),
     
     setProjectName: (name) => {
       set({ projectName: name });
@@ -1316,9 +1454,40 @@ export const useTaskStore = create<TaskStore>((set, get) => {
             
             if (data.type === 'tasks-updated') {
               console.log('Tasks updated, refreshing...');
-              const { layoutMode, customPositions } = get();
-              const tasks: Task[] = data.data.tasks || [];
-              const nodes = calculateNodePositions(tasks, layoutMode, customPositions);
+              const { layoutMode, customPositions, dynamicLayout, forceLayout } = get();
+              
+              // Handle both new response shape (with mode) and legacy response (tasks only) for SSE updates
+              const isNewResponseShape = data.data && 'mode' in data.data;
+              
+              // Ensure tasks is always a valid array
+              let tasks: Task[] = [];
+              if (isNewResponseShape && Array.isArray(data.data.tasks)) {
+                tasks = data.data.tasks;
+              } else if (!isNewResponseShape && Array.isArray(data.data)) {
+                // Legacy: entire data is the tasks array
+                tasks = data.data;
+              } else if (!isNewResponseShape && data.data && Array.isArray(data.data.tasks)) {
+                // Legacy: data has tasks property
+                tasks = data.data.tasks;
+              } else {
+                console.error('Invalid SSE tasks data format:', data.data);
+                // Don't throw here, just use empty array to avoid breaking live updates
+                tasks = [];
+              }
+              
+              const mode = isNewResponseShape ? data.data.mode : 'v1';
+              const config = isNewResponseShape ? data.data.config : null;
+              const report = isNewResponseShape ? data.data.report : null;
+              const currentTag = isNewResponseShape ? (data.data.currentTag || 'master') : 'master';
+              const availableTags = isNewResponseShape ? (data.data.availableTags || ['master']) : ['master'];
+              
+              // Track active task for dynamic layout
+              const activeTask = tasks.find(t => 
+                t.status === 'in-progress' || t.subtasks.some(st => st.status === 'in-progress')
+              );
+              const activeTaskId = activeTask?.id || null;
+              
+              const nodes = calculateNodePositions(tasks, layoutMode, customPositions, dynamicLayout, activeTaskId, forceLayout);
               const edges = createEdges(tasks, layoutMode);
               
               set({ 
@@ -1326,7 +1495,13 @@ export const useTaskStore = create<TaskStore>((set, get) => {
                 nodes,
                 edges,
                 lastUpdateTime: data.timestamp,
-                error: null
+                error: null,
+                currentActiveTaskId: activeTaskId,
+                mode,
+                config,
+                report,
+                currentTag,
+                availableTags
               });
             } else if (data.type === 'error') {
               console.error('🔴 SSE error:', data.message);
@@ -1788,6 +1963,9 @@ export const useTaskStore = create<TaskStore>((set, get) => {
       }
       
       return mermaid;
+    },
+    clearError: () => {
+      set({ error: null });
     }
   };
 });
