@@ -1,432 +1,157 @@
-# Product Requirements Document
-## TaskMaster Visualizer - Intelligent Positioning & PRD Integration
+# Texas Gun Trader Scraper & Market Analysis – Lean MVP PRD
 
-**Version:** 1.1  
-**Date:** June 2025  
-**Author:** Product Team  
-**Status:** Updated Draft
+## Document Info
+
+| Field       | Value                     |
+| ----------- | ------------------------- |
+| **Version** | 1.1 (Lean MVP)            |
+| **Date**    | 13 Jun 2025               |
+| **Author**  | @zudsniper                |
+| **Status**  | Draft – awaiting sign‑off |
 
 ---
 
-## 1. Executive Summary
+## 1 • Purpose
 
-This PRD outlines two major enhancements to the TaskMaster Visualizer platform:
+Build a **minimal‑but‑useful** system that continuously scrapes listings from *TexasGunTrader.com*, stores them in Cloudflare‑native services, surfaces them in **Google Sheets** for rapid analysis, provides a lightweight **React‑Admin** console for power‑use actions, and fires **Discord webhook embeds** for deals that meet user‑defined criteria.
+The goal is to ship an MVP fast, then iterate.
 
-1. **Intelligent Positioning System**: A complete overhaul of the layout engine to support ongoing project management with automatic, context-aware task positioning that scales to hundreds of tasks while maintaining visual clarity.
+## 2 • Scope
 
-2. **PRD Integration**: Deep integration of Product Requirements Document references, enabling visual connections between tasks and their source PRD items/subitems for better traceability and project understanding.
+### In‑scope (Phase 1 MVP)
 
-These features address critical usability issues with the current grid/graph layouts and provide essential context for task execution.
+* Cloudflare Worker scraper with rotating proxy support.
+* Storage:
 
-## 2. Problem Statement
+  * **D1** – structured listing data & metadata.
+  * **R2** – original listing images.
+* **Google Sheets exporter** – single spreadsheet per environment:
 
-### Layout & Positioning Issues
-- Current grid mode produces unusable 2-column layouts for projects with many tasks
-- Graph view lacks intelligent spacing for edge visualization
-- No automatic repositioning when tasks/subtasks are added
-- Active tasks get lost in cluttered visualizations
-- Manual positioning doesn't scale beyond 20-30 tasks
-- Important task relationships (edges) become unreadable
+  * `Listings` sheet – one row per listing (latest state wins).
+  * `ScrapeRuns` sheet – log of every run.
+  * `PriceChecks` sheet – results of "Actual Estimate" calls.
+* **React‑Admin** web console (served from Cloudflare Pages/Worker):
 
-### PRD Context Issues
-- Tasks lack context about which PRD items drove their creation
-- No visibility into the relationship between PRD structure and task hierarchy
-- Cannot track progress at the PRD level vs task level
-- Missing traceability from requirements to implementation
+  * Auth via **Cloudflare Zero Trust**.
+  * CRUD on listings (view, tag, mark reviewed).
+  * Schedule settings (cron expression, proxy config).
+  * Manual **Actual Estimate** trigger with editable prompt template & model selector.
+* **Discord webhook embeds** for flagged/under‑priced listings (no full bot).
 
-## 3. Goals & Objectives
+### Out‑of‑scope (post‑MVP backlog)
 
-### Primary Goals
-- Create an intelligent positioning system for ongoing task management
-- Enable visual mapping between PRD items and generated tasks
-- Provide automatic layout adjustments as project evolves
-- Maintain clarity with growing task counts
-- Show task relationships without visual clutter
-- Provide traceability from requirements to implementation
-- Show PRD completion status based on task progress
-- Improve project understanding through smart visualization
+* Full Discord bot with slash commands.
+* ML deal‑scoring model.
+* Automated purchasing flows.
+* Multi‑site scraping.
 
-### Success Metrics
-- 90% reduction in manual positioning needs
-- Support for 500+ tasks without visual degradation
-- <2 second layout recalculation for task changes
-- 80% reduction in time to find source requirements for tasks
-- 90% of users can trace tasks back to PRD items
-- 50% improvement in requirement coverage visibility
-- 95% accuracy in PRD completion calculations
-- 75% of users report improved task navigation
+## 3 • Success Criteria (MVP)
 
-## 4. Key Benefits of Intelligent Positioning
+| Metric                                  | Target                        |
+| --------------------------------------- | ----------------------------- |
+| Listing appears in Google Sheets within | **< 5 minutes** of detection  |
+| React‑Admin console initial load        | **< 3 s**                     |
+| Manual price estimate latency           | **≤ 30 s**                    |
+| Discord embed delivery                  | **< 60 s** after deal flagged |
 
-### For Daily Task Management
-- **Automatic Focus**: Active tasks automatically move to prominent positions
-- **Context Preservation**: Related tasks stay visually connected
-- **Scalability**: Handle 500+ tasks without manual intervention
-- **Clarity**: Important edges/relationships remain visible
+## 4 • High‑Level Architecture
 
-### For Project Evolution
-- **Dynamic Adaptation**: Layout adjusts as project grows
-- **Subtask Integration**: Space automatically allocated for new subtasks
-- **History Awareness**: Frequently accessed paths become highways
-- **Pattern Recognition**: Common workflows emerge visually
-
-### For Team Collaboration
-- **Shared Understanding**: Consistent layouts across team members
-- **Activity Visibility**: See where work is happening in real-time
-- **Conflict Avoidance**: Identify overlapping work areas
-- **Progress Tracking**: Visual flow of completed work
-
-## 5. User Personas
-
-### 1. Product Manager "Sarah"
-- Needs to track which requirements are being implemented
-- Wants to see overall PRD completion status
-- Requires traceability for stakeholder communication
-
-### 2. Developer "Alex"
-- Needs to understand task context from PRDs
-- Wants quick access to requirement details
-- Requires visual understanding of dependencies
-
-### 3. Tech Lead "Jordan"
-- Needs to ensure all PRD items are covered
-- Wants to identify gaps in implementation
-- Requires high-level progress visualization
-
-## 5. Feature Requirements
-
-### 5.1 Intelligent Layout & Positioning System
-
-#### Current Problems
-- Grid mode produces ineffective 2-column layouts for larger task sets
-- Graph view lacks intelligent spacing for edge visualization
-- No dynamic repositioning when tasks/subtasks are added
-- Active tasks get lost in the visualization
-- Manual positioning is tedious and doesn't scale
-
-#### Requirements
-
-##### Adaptive Layout Engine
-- **Force-Directed Graph Layout**: Physics-based positioning that naturally spaces nodes
-- **Constraint-Based Layout**: Rules for minimum spacing, alignment, and grouping
-- **Hierarchical Layout Options**: Multiple algorithms (Sugiyama, tree, radial)
-- **Hybrid Layouts**: Combine manual pins with automatic positioning
-
-##### Dynamic Repositioning
-- **Live Layout Updates**: Smooth transitions when tasks are added/removed
-- **Subtask Expansion**: Intelligent space allocation when subtasks are revealed
-- **Active Task Focus**: Automatic viewport centering and spacing adjustments
-- **Edge Clarity**: Maintain readable paths between connected tasks
-
-##### Layout Intelligence
-```typescript
-interface LayoutEngine {
-  // Core layout algorithms
-  forceDirected(options: ForceOptions): NodePosition[];
-  hierarchical(options: HierarchyOptions): NodePosition[];
-  circular(center: TaskId): NodePosition[];
-  
-  // Dynamic adjustments
-  makeSpaceForSubtasks(taskId: number, subtaskCount: number): void;
-  focusActiveTask(taskId: number, options: FocusOptions): void;
-  optimizeEdgeVisibility(edges: TaskEdge[]): void;
-  
-  // Constraints
-  applyConstraints(constraints: LayoutConstraint[]): void;
-  maintainUserPins(pinnedNodes: Set<string>): void;
-}
-
-interface LayoutConstraint {
-  type: 'spacing' | 'alignment' | 'grouping' | 'ordering';
-  nodes: string[];
-  parameters: any;
-}
+```
+┌───────────────┐    CF Cron
+│ React‑Admin   │<─────────────┐
+│ (CF Pages)    │              │
+└──────▲────────┘              │
+       │REST/GraphQL           │
+┌──────┴────────┐        ┌─────▼─────┐    Google Sheets API
+│  API Router   │◀──────▶│  D1 DB    │◀───────────────────────┐
+│  (CF Worker)  │        └───────────┘                        │
+└──────▲────────┘              ▲                             │
+       │                       │                             │
+       │                       │                             │
+┌──────┴────────┐    Images    │        Deal Embeds          │
+│ Scraper       │────────────▶│  R2 Bucket  │──────────────▶ Discord
+│ (CF Worker)   │             └────────────┘                Webhook
+└───────────────┘
 ```
 
-##### Smart Positioning Features
-- **Collision Detection**: Prevent node overlap with padding
-- **Edge Routing**: Intelligent paths to avoid node intersections
-- **Cluster Detection**: Group related tasks automatically
-- **Importance Scoring**: Position by priority/activity/dependencies
+## 5 • User Stories
 
-### 5.2 PRD Data Model Integration
+1. **Schedule Scrapes** – As the Project Lead I set a cron (e.g., every 15 min) in the console so scraping runs automatically.
+2. **Monitor & Tag Listings** – As an Analyst I view new listings in Google Sheets or the console, add tags (e.g., *possible‑deal*, *out‑of‑state*).
+3. **Trigger Price Check** – I click *Estimate* on a listing; the system calls OpenRouter with my chosen model & prompt template, then saves the result.
+4. **Receive Alerts** – When a listing is ≥ 20 % under median price, I get a rich embed in Discord with title, image, and delta.
 
-#### Requirements
-- Support PRD document structure with sections, items, and subitems
-- Store PRD references within task metadata
-- Support multiple PRD versions and tracking
+## 6 • Functional Requirements
 
-#### Data Structure
-```typescript
-interface PRD {
-  id: string;
-  title: string;
-  version: string;
-  sections: PRDSection[];
-  metadata: {
-    author: string;
-    createdAt: Date;
-    updatedAt: Date;
-    status: 'draft' | 'approved' | 'archived';
-  };
-}
+### 6.1 Scraper (Worker)
 
-interface PRDSection {
-  id: string;
-  title: string;
-  items: PRDItem[];
-}
+* **FR‑S1** Browser‑simulated fetch with rotating proxies (env var list).
+* **FR‑S2** Parse each listing: `id`, `title`, `price`, `city`, `description`, `status`, specs, image URLs.
+* **FR‑S3** Detect status changes to `SOLD`; upsert into D1 & Sheets.
+* **FR‑S4** Resume on failure using `lastPage` checkpoint in D1.
+* **FR‑S5** Emit event (`POST /internal/new‑listing`) to API Router when under‑priced rule matches.
 
-interface PRDItem {
-  id: string;
-  title: string;
-  description: string;
-  priority: 'must-have' | 'should-have' | 'nice-to-have';
-  subitems?: PRDSubitem[];
-  linkedTasks: number[]; // Task IDs
-}
-```
+### 6.2 Data Layer
 
-### 5.2 Visual PRD Integration
+* **FR‑D1** Normalized schema (`listings`, `runs`, `estimates`, `tags`).
+* **FR‑D2** Images stored in R2 under `/<listingId>/<filename>`.
+* **FR‑D3** Sheets sync:
 
-#### PRD Panel
-- Collapsible sidebar showing PRD hierarchy
-- Expandable sections with items/subitems
-- Visual indicators for:
-  - Coverage (items with/without tasks)
-  - Progress (based on linked task status)
-  - Priority levels
+  * New row on first see; update row on changes.
+  * Upsert via listing `id` as key.
 
-#### PRD-Task Connections
-- Dotted lines connecting PRD items to tasks
-- Hover to highlight connections
-- Click to focus on connected elements
-- Different line styles for direct vs indirect references
+### 6.3 React‑Admin Console
 
-#### PRD Overlay Mode
-- Toggle to show PRD structure as background
-- Tasks positioned relative to PRD items
-- Semi-transparent PRD cards behind task clusters
+* **FR‑A1** Login enforced by CF Zero Trust.
+* **FR‑A2** `Listings` resource grid with filters (status, tag, price band).
+* **FR‑A3** Detail page → *Estimate* button (+ prompt editor modal).
+* **FR‑A4** `Settings` page: cron, proxy list, Discord webhook URL, OpenRouter key, default model, under‑price threshold.
 
-### 5.3 PRD Reference Management
+### 6.4 Discord Notifications
 
-#### In-Task PRD Display
-- PRD references shown in task details panel
-- Quick links to source PRD items
-- Inline PRD context preview
-- Reference path (Section > Item > Subitem)
+* **FR‑N1** Send `embed` JSON (title, price, delta%, link, first image).
+* **FR‑N2** Rate‑limit 5 messages/min.
+* **FR‑N3** Toggle on/off in Settings.
 
-#### Bulk Reference Editor
-- Multi-select tasks to assign PRD references
-- Drag-and-drop PRD items onto tasks
-- Auto-suggest PRD items based on task content
-- Validation for reference consistency
+### 6.5 Actual Estimate Service
 
-### 5.4 PRD Progress Tracking
+* **FR‑E1** Build prompt from template + listing JSON.
+* **FR‑E2** Call OpenRouter; save response in `estimates` table & Sheets.
+* **FR‑E3** Display result in console and optionally push to Discord.
 
-#### Coverage Analytics
-- Percentage of PRD items with linked tasks
-- Heatmap showing implementation density
-- Gap analysis highlighting uncovered items
-- Priority-weighted coverage scores
+## 7 • Non‑Functional Requirements
 
-#### Progress Visualization
-- PRD completion percentage
-- Section-level progress bars
-- Timeline view of PRD implementation
-- Burndown chart for PRD items
+| Category        | Requirement                                                               |
+| --------------- | ------------------------------------------------------------------------- |
+| **Performance** | Full site crawl ≤ 24 h; incremental crawl 1 page/sec.                     |
+| **Scalability** | CF Workers durable objects partitioned by listing ID.                     |
+| **Reliability** | Retry w/ exponential backoff; alert to Discord on 5 consecutive failures. |
+| **Security**    | Secrets in CF KV; Sheets OAuth via Service Account; Zero Trust MFA.       |
 
-### 5.5 Search & Filter Enhancements
+## 8 • Phased Roadmap (target)
 
-#### PRD-Aware Search
-- Search by PRD reference
-- Filter tasks by PRD section/item
-- Find uncovered PRD items
-- Search within PRD descriptions
+| Phase              | Duration | Deliverables                                      |
+| ------------------ | -------- | ------------------------------------------------- |
+| 0 – Setup          | 2 days   | Repo skeleton, CF env, Sheets credentials, CI/CD. |
+| 1 – Scraper MVP    | 5 days   | Worker scraper → D1/R2 & Sheets; manual trigger.  |
+| 2 – Console MVP    | 4 days   | React‑Admin grid, cron config, manual estimate.   |
+| 3 – Discord Alerts | 3 days   | Webhook embeds & under‑price rule.                |
+| 4 – Polish & Docs  | 2 days   | README, deploy guide, observability hooks.        |
 
-#### Advanced Filters
-- Show only tasks for specific PRD
-- Filter by PRD priority
-- Show tasks without PRD references
-- Combined PRD + task status filters
+## 9 • Definition of Done (MVP)
 
-### 5.6 Import/Export Capabilities
+* All FRs in Phases 1‑3 pass e2e tests.
+* Production domain behind Zero Trust.
+* Spreadsheet & Discord channel receiving real data.
+* Team walkthrough recorded.
 
-#### PRD Import
-- Support for Markdown PRDs
-- JSON/YAML PRD format
-- Parse PRD from Claude Task Master format
-- Auto-link existing tasks to imported PRDs
+## 10 • Open Questions / Risks
 
-#### Export Options
-- PRD coverage report
-- Requirements traceability matrix
-- PRD-annotated task export
-- Implementation status summary
+1. How aggressive can scrape interval be before TGT blocks us?
+2. Proxy costs vs. CF bandwidth limits.
+3. Google Sheets API write quotas under heavy update load.
+4. Image hotlinking vs. storing copies in R2 (copyright).
 
-## 6. Technical Requirements
+---
 
-### 6.1 Layout Engine
-- WebGL-accelerated rendering for smooth transitions
-- Web Workers for layout calculations
-- D3-force or similar physics engine
-- Efficient collision detection algorithms
-- GPU-based edge routing
-
-### 6.2 Data Storage
-- Extend task schema for PRD references
-- Layout preferences per user/view
-- Position history for undo/redo
-- New PRD document collection/table
-- Efficient PRD-task relationship queries
-- Version control for PRD changes
-
-### 6.3 Performance
-- <16ms frame time for 1000+ nodes
-- Lazy load PRD data
-- Efficient connection rendering (<100ms)
-- Progressive detail loading
-- Smooth 60fps animations
-- Virtual scrolling for large graphs
-
-### 6.4 Integration
-- API endpoints for PRD CRUD operations
-- Webhook support for PRD updates
-- Integration with Claude Task Master API
-- Support for external PRD tools
-- Real-time collaboration sync
-
-## 7. User Interface Mockups
-
-### 7.1 Intelligent Layout View
-```
-+-------------------------------------------------------+
-|  Layout: [Force-Directed ▼] Active Task: ON  PRD: ON |
-|                                                       |
-|         ○────○                   🟢 Active Task       |
-|        ╱      ╲                  ╱   (centered)      |
-|       ○        ○────────────────○                    |
-|       │         ╲              ╱ ╲                   |
-|       ○──────────○            ○   ○ Related tasks    |
-|                   ╲          ╱     (pulled closer)   |
-|    ○  ○  ○         ○────────○                        |
-|  (inactive)                                          |
-+-------------------------------------------------------+
-Legend: 🟢 Active  ○ Normal  ─ Dependencies
-```
-
-### 7.2 PRD-Centric Layout
-```
-+-------------------------------------------------------+
-| ┌─────────────────┐    ┌─────────────────┐          |
-| │ PRD Section 1   │    │ PRD Section 2   │          |
-| │ ┌─────┐ ┌─────┐ │    │ ┌─────┐         │          |
-| │ │Task1│ │Task2│ │    │ │Task5│ ┌─────┐ │          |
-| │ └──┬──┘ └──┬──┘ │    │ └──┬──┘ │Task6│ │          |
-| │    └───┬───┘    │    │    └────┤     │ │          |
-| │     ┌──▼──┐     │    │         └─────┘ │          |
-| │     │Task3│     │    │                 │          |
-| │     └─────┘     │    │                 │          |
-| └─────────────────┘    └─────────────────┘          |
-+-------------------------------------------------------+
-```
-
-### 7.3 Activity Timeline View
-```
-+-------------------------------------------------------+
-| Timeline ─────●───────●────●──────●──────●► Now      |
-|              9am     10am  11am  12pm   1pm          |
-|                                                       |
-|  ┌─────────┐     ┌─────────┐    ┌─────────┐        |
-|  │ Task 1  │     │ Task 3  │    │ Task 5  │ Active |
-|  │ ✓ Done  │     │ ⚡ Active│    │ ○ Next  │        |
-|  └─────────┘     └─────────┘    └─────────┘        |
-|       ↓               ↓               ↑              |
-|  ┌─────────┐     ┌─────────┐         │              |
-|  │ Task 2  │     │ Task 4  │ ────────┘              |
-|  │ ✓ Done  │     │ ◐ 45%   │                       |
-|  └─────────┘     └─────────┘                       |
-+-------------------------------------------------------+
-```
-
-## 8. Implementation Phases
-
-### Phase 1: Layout System Overhaul (6 weeks)
-- Force-directed graph implementation
-- Smart spacing algorithms
-- Active task focus system
-- Edge routing improvements
-- Basic constraint system
-
-### Phase 2: PRD Foundation (4 weeks)
-- PRD data model implementation
-- Basic PRD import functionality
-- Task-PRD reference storage
-- Simple PRD panel UI
-
-### Phase 3: Dynamic Positioning (4 weeks)
-- Real-time layout updates
-- Subtask space management
-- Activity-based positioning
-- Smooth transitions
-- Multi-layout support
-
-### Phase 4: Visual Integration (6 weeks)
-- PRD-task connection visualization
-- PRD overlay mode
-- Enhanced task details with PRD context
-- Basic progress tracking
-
-### Phase 5: Advanced Features (6 weeks)
-- Coverage analytics
-- Advanced search/filter
-- Bulk reference management
-- Export capabilities
-- Custom layout designer
-
-### Phase 6: Polish & Optimization (2 weeks)
-- Performance optimization
-- UI/UX refinements
-- Documentation
-- User training materials
-
-## 9. Success Criteria
-
-- All tasks can be traced to source PRD items
-- PRD coverage is visible at a glance
-- Users can navigate between PRDs and tasks seamlessly
-- System handles large PRDs (100+ items) smoothly
-- Export provides complete traceability documentation
-
-## 10. Open Questions
-
-1. Should we support multiple PRDs per project?
-2. How to handle PRD updates after tasks are generated?
-3. Should PRD items support custom fields/attributes?
-4. Integration with version control for PRDs?
-5. Real-time collaboration on PRD-task mappings?
-
-## 12. Dependencies
-
-- Force-directed graph libraries (D3-force, vis.js, or custom WebGL)
-- Edge routing algorithms (dagre, elkjs)
-- WebWorker support for layout calculations
-- Claude Task Master API documentation
-- PRD format specification
-- Database schema updates
-- UI component library extensions
-- React Flow or similar graph visualization library
-- Performance profiling tools
-
-## 13. Risks & Mitigation
-
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| Layout algorithm complexity | High | Start with proven algorithms (D3-force), iterate based on feedback |
-| Performance with 500+ nodes | High | GPU acceleration, level-of-detail rendering, virtualization |
-| User confusion with auto-layout | Medium | Provide manual override, smooth transitions, layout explanations |
-| Complex PRD structures | High | Limit nesting depth, provide flattened view |
-| PRD-task sync issues | High | Validation rules, manual override options |
-| Edge routing performance | Medium | Use quadtrees, progressive rendering, edge bundling |
-| User adoption | Medium | Intuitive UI, comprehensive onboarding, migration tools |
-| Breaking existing workflows | High | Preserve manual positioning option, gradual rollout |
+**End of Document**

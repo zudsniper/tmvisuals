@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, KeyboardEvent } from 'react';
 import { Folder, File, HardDrive, ArrowLeft, Check, X } from 'lucide-react';
 import { useTaskStore } from '../store/taskStore';
 
@@ -23,19 +23,28 @@ interface FileBrowserProps {
 }
 
 export const FileBrowser: React.FC<FileBrowserProps> = ({ onSelectPath, onClose, isOpen }) => {
-  const { isDarkMode } = useTaskStore();
+  const { isDarkMode, clearError } = useTaskStore();
   const [currentPath, setCurrentPath] = useState<string>('/home');
+  const [inputPath, setInputPath] = useState<string>('/home');
   const [items, setItems] = useState<FileItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [drives, setDrives] = useState<FileItem[]>([]);
+  const [completionSuggestions, setCompletionSuggestions] = useState<string[]>([]);
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState<number>(-1);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Load system drives on component mount and set home directory when available
   useEffect(() => {
     if (isOpen) {
+      // Clear any existing global errors when opening the file browser
+      clearError();
       loadDrives();
+      // Focus the input when the dialog opens
+      setTimeout(() => inputRef.current?.focus(), 100);
     }
-  }, [isOpen]);
+  }, [isOpen, clearError]);
 
   // Initialize with home directory if we don't have drives yet
   useEffect(() => {
@@ -48,6 +57,7 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ onSelectPath, onClose,
             const data = await response.json();
             if (data.homeDirectory && currentPath === '/home') {
               setCurrentPath(data.homeDirectory);
+              setInputPath(data.homeDirectory);
               await loadDirectory(data.homeDirectory);
             }
           }
@@ -58,6 +68,11 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ onSelectPath, onClose,
       initializeWithHome();
     }
   }, [isOpen, drives.length, currentPath]);
+
+  // Update input path when current path changes
+  useEffect(() => {
+    setInputPath(currentPath);
+  }, [currentPath]);
 
   // Helper function to parse errors from fetch responses
   const parseFetchError = async (response: Response, defaultMessage: string): Promise<string> => {
@@ -99,10 +114,12 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ onSelectPath, onClose,
       // Set initial path to home directory if available
       if (data.homeDirectory) {
         setCurrentPath(data.homeDirectory);
+        setInputPath(data.homeDirectory);
         await loadDirectory(data.homeDirectory);
       } else if (data.drives && data.drives.length > 0) {
         const defaultPath = data.drives[0].path;
         setCurrentPath(defaultPath);
+        setInputPath(defaultPath);
         await loadDirectory(defaultPath);
       } else {
         // If no drives, maybe load root or a default, or show a message.
@@ -176,6 +193,7 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ onSelectPath, onClose,
       }
       
       setCurrentPath(data.currentPath);
+      setInputPath(data.currentPath);
       setItems(data.items);
       setError(null); // Clear error only on successful directory load
     } catch (error) {
@@ -236,18 +254,34 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ onSelectPath, onClose,
 
   const handleSelectPath = () => {
     try {
-      if (!currentPath || currentPath.trim().length === 0) {
+      const pathToSelect = inputPath.trim();
+      
+      if (!pathToSelect || pathToSelect.length === 0) {
         setError('Cannot select empty path');
         return;
       }
       
       // Basic path validation before selecting
-      if (currentPath.includes('..')) {
+      if (pathToSelect.includes('..')) {
         setError('Invalid path: contains directory traversal attempts');
         return;
       }
       
-      onSelectPath(currentPath.trim());
+      // Check if the path might cause issues with watch mode
+      const normalizedPath = pathToSelect.toLowerCase().replace(/\\/g, '/');
+      if (normalizedPath === '/users' || 
+          normalizedPath === '/users/' ||
+          normalizedPath === '/users/jason' ||
+          normalizedPath === '/users/jason/' ||
+          normalizedPath.includes('/ai/tmvisuals') ||
+          normalizedPath === '/' ||
+          normalizedPath === '/home' ||
+          normalizedPath === '/home/') {
+        setError('Cannot select this directory: Please select a specific project folder, not a system directory or the application directory itself.');
+        return;
+      }
+      
+      onSelectPath(pathToSelect);
       onClose();
     } catch (error) {
       console.error('Failed to select path:', error);
@@ -261,6 +295,103 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ onSelectPath, onClose,
     const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  };
+
+  // Tab completion logic
+  const getCompletions = async (partialPath: string): Promise<string[]> => {
+    try {
+      const separator = partialPath.includes('\\') ? '\\' : '/';
+      const lastSeparatorIndex = partialPath.lastIndexOf(separator);
+      
+      let dirPath: string;
+      let prefix: string;
+      
+      if (lastSeparatorIndex === -1) {
+        // No separator, use current directory
+        dirPath = currentPath;
+        prefix = partialPath;
+      } else {
+        dirPath = partialPath.substring(0, lastSeparatorIndex) || separator;
+        prefix = partialPath.substring(lastSeparatorIndex + 1);
+      }
+      
+      // Fetch directory contents
+      const response = await fetch(`/api/browse?dir=${encodeURIComponent(dirPath)}`);
+      if (!response.ok) {
+        return [];
+      }
+      
+      const data: BrowseResponse = await response.json();
+      
+      // Filter directories that start with the prefix
+      const suggestions = data.items
+        .filter(item => item.isDirectory && item.name.toLowerCase().startsWith(prefix.toLowerCase()))
+        .map(item => {
+          // Return the full path
+          if (lastSeparatorIndex === -1) {
+            return item.path;
+          } else {
+            return partialPath.substring(0, lastSeparatorIndex + 1) + item.name;
+          }
+        });
+      
+      return suggestions;
+    } catch (error) {
+      console.error('Failed to get completions:', error);
+      return [];
+    }
+  };
+
+  const handleInputKeyDown = async (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      
+      if (showSuggestions && completionSuggestions.length > 0) {
+        // Cycle through suggestions
+        const nextIndex = (selectedSuggestionIndex + 1) % completionSuggestions.length;
+        setSelectedSuggestionIndex(nextIndex);
+        setInputPath(completionSuggestions[nextIndex]);
+      } else {
+        // Get new suggestions
+        const suggestions = await getCompletions(inputPath);
+        if (suggestions.length > 0) {
+          setCompletionSuggestions(suggestions);
+          setShowSuggestions(true);
+          setSelectedSuggestionIndex(0);
+          setInputPath(suggestions[0]);
+        }
+      }
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      setShowSuggestions(false);
+      
+      // Try to load the directory
+      const pathToLoad = inputPath.trim();
+      if (pathToLoad) {
+        await loadDirectory(pathToLoad);
+      }
+    } else if (e.key === 'Escape') {
+      if (showSuggestions) {
+        setShowSuggestions(false);
+        setCompletionSuggestions([]);
+        setSelectedSuggestionIndex(-1);
+      } else {
+        // Reset to current path
+        setInputPath(currentPath);
+      }
+    } else {
+      // Reset suggestions on any other key
+      setShowSuggestions(false);
+      setCompletionSuggestions([]);
+      setSelectedSuggestionIndex(-1);
+    }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setInputPath(e.target.value);
+    setShowSuggestions(false);
+    setCompletionSuggestions([]);
+    setSelectedSuggestionIndex(-1);
   };
 
   if (!isOpen) return null;
@@ -306,6 +437,12 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ onSelectPath, onClose,
               Example: Select <code>/Users/john/myproject</code> to load tasks from{' '}
               <code>/Users/john/myproject/tasks/</code>
             </span>
+            <br />
+            <span className={`text-xs mt-1 ${
+              isDarkMode ? 'text-blue-400' : 'text-blue-600'
+            }`}>
+              Tip: Use Tab for auto-completion, Enter to navigate to a directory
+            </span>
           </p>
           
           <div className="flex items-center gap-2 mb-4">
@@ -319,10 +456,43 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({ onSelectPath, onClose,
               <ArrowLeft className="w-4 h-4" />
             </button>
             
-            <div className={`flex-1 px-3 py-2 rounded-lg text-sm font-mono ${
-              isDarkMode ? 'bg-gray-700 text-gray-200' : 'bg-gray-100 text-gray-800'
-            }`}>
-              {currentPath}
+            <div className="flex-1 relative">
+              <input
+                ref={inputRef}
+                type="text"
+                value={inputPath}
+                onChange={handleInputChange}
+                onKeyDown={handleInputKeyDown}
+                className={`w-full px-3 py-2 rounded-lg text-sm font-mono outline-none ${
+                  isDarkMode 
+                    ? 'bg-gray-700 text-gray-200 focus:ring-2 focus:ring-blue-500' 
+                    : 'bg-gray-100 text-gray-800 focus:ring-2 focus:ring-blue-400'
+                }`}
+                placeholder="Type a path or use Tab for completion"
+              />
+              {showSuggestions && completionSuggestions.length > 0 && (
+                <div className={`absolute top-full mt-1 left-0 right-0 rounded-lg shadow-lg overflow-hidden z-10 ${
+                  isDarkMode ? 'bg-gray-700 border border-gray-600' : 'bg-white border border-gray-200'
+                }`}>
+                  <div className={`px-3 py-1 text-xs ${
+                    isDarkMode ? 'text-gray-400 bg-gray-800' : 'text-gray-500 bg-gray-50'
+                  }`}>
+                    Tab completion ({completionSuggestions.length} suggestion{completionSuggestions.length !== 1 ? 's' : ''})
+                  </div>
+                  {completionSuggestions.slice(0, 5).map((suggestion, index) => (
+                    <div
+                      key={suggestion}
+                      className={`px-3 py-2 text-sm font-mono ${
+                        index === selectedSuggestionIndex 
+                          ? isDarkMode ? 'bg-blue-600 text-white' : 'bg-blue-500 text-white'
+                          : isDarkMode ? 'text-gray-200' : 'text-gray-800'
+                      }`}
+                    >
+                      {suggestion}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             
             <button

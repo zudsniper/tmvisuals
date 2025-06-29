@@ -1,0 +1,97 @@
+# Texas Gun Trader Scraper Restructuring - Product Requirements Document
+
+## Project Overview
+Restructure the Texas Gun Trader scraper to use a two-phase extraction approach instead of trying to extract all listing details in a single complex request. The current approach of requesting arrays of complete listings from Firecrawl is failing (returning 0 listings), while the previous single-listing approach worked but was limited.
+
+## Problem Statement
+- Current Firecrawl extraction requesting arrays of listings returns 0 results
+- Complex schema extraction in single request is unreliable
+- Need more robust, scalable scraping approach
+- Missing detailed information that can only be found on individual listing pages
+
+## Proposed Solution: Two-Phase Extraction
+
+### Phase 1: List Page Extraction
+- Extract basic listing information from search/category pages
+- Focus on: title, price, listing URL, thumbnail image
+- Simple schema for higher reliability
+- Handle pagination to get all pages
+
+### Phase 2: Detail Page Extraction
+- Visit each individual listing URL from Phase 1
+- Extract comprehensive details: full description, all images, specifications, seller info
+- Use dedicated schema for detail pages
+- Handle rate limiting and retries
+
+## Core Requirements
+
+### 1. List Page Processing
+- Detect total number of pages available
+- Extract basic listing data from each page
+- Schema: { title: string, price: number, url: string, imageUrl?: string }
+- Handle pagination automatically
+
+### 2. Detail Page Processing  
+- Queue individual listing URLs for processing
+- Extract full listing details from individual pages
+- Merge basic + detailed data
+- Handle missing or malformed detail pages gracefully
+
+### 3. Rate Limiting & Performance
+- Implement proper delays between requests
+- Batch processing with configurable limits
+- Resume capability for interrupted scrapes
+- Progress tracking and logging
+
+### 4. Data Management
+- Store basic listings immediately after Phase 1
+- Update records with detailed data after Phase 2
+- Handle duplicates and data validation
+- Maintain scraping metadata (timestamps, sources)
+
+### 5. Admin Dashboard Integration
+- Monitor two-phase progress separately
+- Test both phases independently
+- Display extraction statistics and success rates
+- Debugging tools for each phase
+
+## Technical Architecture
+
+### Current State Analysis
+- FirecrawlExtractionService exists but tries to do too much in one request
+- ScraperService has rate limiting but single-phase approach
+- Admin dashboard supports custom schema testing
+- Worker has debug endpoints for testing
+
+### Proposed Changes
+1. Split ExtractionService into ListPageExtractor and DetailPageExtractor
+2. Add PaginationHandler for multi-page processing
+3. Update ScraperService for two-phase orchestration
+4. Enhance admin dashboard for phase-specific testing
+5. Add job queue system for detail page processing
+
+## Success Criteria
+- Reliably extract basic info from 100% of accessible listing pages
+- Successfully extract detailed info from 90%+ of individual listings
+- Complete full city scrape in reasonable time (under 2 hours for typical city)
+- Zero token waste on failed complex extractions
+- Admin dashboard can test and monitor both phases
+
+## Timeline
+- Phase 1: Restructure extraction services (2-3 tasks)
+- Phase 2: Implement pagination handling (2-3 tasks) 
+- Phase 3: Add detail page processing (3-4 tasks)
+- Phase 4: Update admin dashboard (2-3 tasks)
+- Phase 5: Testing and optimization (2-3 tasks)
+
+## Risks & Mitigations
+- Rate limiting: Implement conservative delays and backoff
+- Individual page failures: Continue processing, track failures
+- Pagination complexity: Start with simple pagination, enhance iteratively
+- Performance: Process in batches, add resume capability
+
+## Current Implementation Issues
+- Firecrawl array schema returning 0 results
+- Single-request complexity overwhelming the AI
+- No separation between list and detail extraction
+- Limited pagination handling

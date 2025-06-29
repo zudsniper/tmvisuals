@@ -1,0 +1,30 @@
+{
+  "timestamp": "2024-01-15T10:30:00.000Z",
+  "reportType": "status",
+  "summary": {
+    "totalTasks": 3,
+    "completedTasks": 1,
+    "inProgressTasks": 1,
+    "pendingTasks": 1,
+    "completionRate": 33.33
+  },
+  "taskDetails": [
+    {
+      "id": 1,
+      "title": "V2 Project Setup",
+      "status": "done",
+      "completedAt": "2024-01-14T15:00:00.000Z"
+    },
+    {
+      "id": 2,
+      "title": "V2 Feature Development", 
+      "status": "in-progress",
+      "startedAt": "2024-01-15T09:00:00.000Z"
+    },
+    {
+      "id": 3,
+      "title": "V2 Testing",
+      "status": "pending"
+    }
+  ]
+}

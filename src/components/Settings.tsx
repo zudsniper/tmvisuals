@@ -722,7 +722,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                 <p className={`text-xs mb-3 ${
                   isDarkMode ? 'text-gray-400' : 'text-gray-600'
                 }`}>
-                  Clear all stored data including project paths, custom positions, viewport settings, and preferences.
+                  Clear all stored data including project paths, custom positions, viewport settings, and preferences. Note: Tasks are stored in ".taskmaster/tasks/tasks.json"; legacy "tasks/tasks.json" projects are still supported but will be migrated in a future release. AI model configuration is loaded from ".taskmaster/config.json".
                 </p>
                 
                 {!showClearConfirmation ? (

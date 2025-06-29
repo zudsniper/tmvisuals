@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Clear TaskMaster Storage</title>
+</head>
+<body>
+    <h1>Clear TaskMaster Storage</h1>
+    <p>Open this file in your browser to clear the problematic localStorage data.</p>
+    <button onclick="clearStorage()">Clear Storage</button>
+    <div id="result"></div>
+    
+    <script>
+        function clearStorage() {
+            try {
+                // Clear all TaskMaster related localStorage
+                const keys = [
+                    'taskmaster-project-path',
+                    'taskmaster-theme',
+                    'taskmaster-positions',
+                    'taskmaster-viewport',
+                    'taskmaster-project-name',
+                    'taskmaster-focus-on-active-task',
+                    'taskmaster-dynamic-layout',
+                    'taskmaster-default-start-path'
+                ];
+                
+                keys.forEach(key => {
+                    const value = localStorage.getItem(key);
+                    if (value) {
+                        console.log(`Clearing ${key}: ${value}`);
+                        localStorage.removeItem(key);
+                    }
+                });
+                
+                document.getElementById('result').innerHTML = '<p style="color: green;">Storage cleared successfully! You can now close this page and reload the TaskMaster app.</p>';
+            } catch (error) {
+                document.getElementById('result').innerHTML = '<p style="color: red;">Error clearing storage: ' + error.message + '</p>';
+            }
+        }
+        
+        // Auto-run on page load
+        window.onload = function() {
+            const path = localStorage.getItem('taskmaster-project-path');
+            if (path) {
+                document.getElementById('result').innerHTML = '<p>Current stored path: ' + path + '</p>';
+            }
+        };
+    </script>
+</body>
+</html> 

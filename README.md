@@ -35,9 +35,9 @@ This will automatically build and start the visualizer at `http://localhost:3001
 ## Requirements
 
 - Node.js 16+
-- A TaskMaster project with a `tasks/` directory containing:
-  - `tasks.json` file, OR
-  - Individual `task_*.txt` files
+- A TaskMaster project with tasks stored in `.taskmaster/tasks/tasks.json`.
+- Legacy `tasks/tasks.json` projects are still supported but will be migrated in a future release.
+- Individual `task_*.txt` files are also supported.
 
 ## Installation Options
 
@@ -114,6 +114,9 @@ tmvisuals --port 3002     # Custom port
 ```
 
 ## Configuration
+
+Tasks are now stored in `.taskmaster/tasks/tasks.json`; legacy `tasks/tasks.json` projects are still supported but will be migrated in a future release.
+AI model configuration is loaded from `.taskmaster/config.json`.
 
 The visualizer remembers your preferences:
 - Selected layout mode
