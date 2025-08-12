@@ -91,7 +91,7 @@ export class PathValidator {
   static extractProjectName(projectPath: string): string {
     const pathValidation = this.validatePath(projectPath);
     if (!pathValidation.isValid) {
-      return 'TaskMaster Visualizer';
+      return 'untitled';
     }
 
     try {
@@ -110,7 +110,7 @@ export class PathValidator {
       console.warn('Failed to extract project name:', error);
     }
     
-    return 'TaskMaster Visualizer';
+    return 'untitled';
   }
 
   /**

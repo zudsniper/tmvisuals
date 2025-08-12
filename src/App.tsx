@@ -48,11 +48,9 @@ function Flow() {
     error,
     clearError,
     // New API response properties
-    mode,
     config,
     report,
     currentTag,
-    availableTags,
     // New dark mode and position features
     theme,
     isDarkMode,
@@ -62,6 +60,7 @@ function Flow() {
     // Project name features
     projectName,
     setProjectName,
+    setProjectPath,
     // Live updates
     isLiveUpdateEnabled,
     lastUpdateTime,
@@ -90,6 +89,7 @@ function Flow() {
   const [showFileBrowser, setShowFileBrowser] = useState(false);
   const [isEditingProjectName, setIsEditingProjectName] = useState(false);
   const [editingProjectName, setEditingProjectName] = useState('');
+  const [defaultPathChecked, setDefaultPathChecked] = useState(false);
 
   // One-time cleanup of problematic localStorage data
   useEffect(() => {
@@ -115,6 +115,24 @@ function Flow() {
       }
     }
   }, []); // Run only once on mount
+
+  // Attempt to load default project path from server
+  useEffect(() => {
+    const fetchDefaultPath = async () => {
+      try {
+        const res = await fetch('/api/default-path');
+        const data = await res.json();
+        if (data.defaultPath) {
+          setProjectPath(data.defaultPath);
+        }
+      } catch (err) {
+        console.error('Failed to fetch default path', err);
+      } finally {
+        setDefaultPathChecked(true);
+      }
+    };
+    fetchDefaultPath();
+  }, [setProjectPath]);
 
   // Set up viewport manager with ReactFlow instance
   useEffect(() => {
@@ -214,12 +232,12 @@ function Flow() {
     // If a valid project path is stored, load tasks from it.
     if (projectPath && tasks.length === 0 && !isLoading) {
       loadTasksFromPath(projectPath);
-    } 
-    // If no project path is set and we are not loading, show the file browser.
-    else if (!projectPath && !isLoading) {
+    }
+    // If no project path is set and we are not loading, show the file browser after checking default path
+    else if (!projectPath && !isLoading && defaultPathChecked) {
       setShowFileBrowser(true);
     }
-  }, [projectPath, tasks.length, isLoading, loadTasksFromPath, error, showFileBrowser]);
+  }, [projectPath, tasks.length, isLoading, loadTasksFromPath, error, showFileBrowser, defaultPathChecked]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -285,7 +303,7 @@ function Flow() {
 
   // Project name editing handlers
   const handleStartEditingProjectName = () => {
-    setEditingProjectName(projectName || 'TaskMaster Visualizer');
+    setEditingProjectName(projectName || 'untitled');
     setIsEditingProjectName(true);
   };
 
@@ -594,23 +612,6 @@ function Flow() {
                 <Network className="w-4 h-4" />
                 Graph
               </button>
-              <button
-                onClick={() => setLayoutMode('force')}
-                className={`px-3 py-1 text-sm rounded flex items-center gap-1 transition-colors ${
-                  layoutMode === 'force' 
-                    ? (isDarkMode ? 'bg-gray-600 text-white shadow-sm' : 'bg-white text-blue-600 shadow-sm')
-                    : (isDarkMode ? 'text-gray-300 hover:text-white' : 'text-gray-600 hover:text-gray-800')
-                }`}
-              >
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="12" cy="12" r="2"/>
-                  <path d="M12 1v6m0 6v6"/>
-                  <path d="m5.93 5.93 4.24 4.24m5.66 5.66 4.24 4.24"/>
-                  <path d="M1 12h6m6 0h6"/>
-                  <path d="m5.93 18.07 4.24-4.24m5.66-5.66 4.24-4.24"/>
-                </svg>
-                Force
-              </button>
             </div>
           </div>
           
@@ -637,7 +638,7 @@ function Flow() {
                 <h1 className={`text-lg font-bold text-center ${
                   isDarkMode ? 'text-white' : 'text-gray-900'
                 }`}>
-                  {projectName || 'TaskMaster Visualizer'}
+                  {projectName || 'untitled'}
                 </h1>
                 <button
                   onClick={handleStartEditingProjectName}
@@ -670,32 +671,28 @@ function Flow() {
                 </button>
               </div>
             )}
-            {/* New info display for mode, config, and report */}
-            {mode && (
-              <div className={`text-xs text-center mt-2 ${
-                isDarkMode ? 'text-gray-400' : 'text-gray-500'
-              }`}> 
-                Mode: {mode}
-              </div>
-            )}
-            {/* Display current tag and available tags */}
+            {/* Display current tag */}
             {currentTag && (
-              <div className={`text-xs text-center mt-1 ${
-                isDarkMode ? 'text-gray-400' : 'text-gray-500'
-              }`}>
-                Current Tag: <span className="font-semibold">{currentTag}</span>
-                {availableTags && availableTags.length > 1 && (
-                  <span className="ml-2">
-                    (Available: {availableTags.join(', ')})
-                  </span>
-                )}
+              <div className="flex justify-center mt-1">
+                <span
+                  className={`text-xs px-2 py-1 rounded-full ${
+                    isDarkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-700'
+                  }`}
+                >
+                  {currentTag}
+                </span>
               </div>
             )}
+            {/* Display models with tooltip */}
             {config && config.modelNames && Array.isArray(config.modelNames) && (
-              <div className={`text-xs text-center mt-1 ${
-                isDarkMode ? 'text-gray-400' : 'text-gray-500'
-              }`}>
-                Models: {config.modelNames.join(', ')}
+              <div className="flex justify-center mt-1">
+                <span
+                  className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}
+                  title={config.modelNames.join(', ')}
+                >
+                  Models: {config.modelNames[0]}
+                  {config.modelNames.length > 1 && '...'}
+                </span>
               </div>
             )}
             {report?.link && (

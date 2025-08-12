@@ -100,11 +100,16 @@ if (fs.existsSync(publicPath)) {
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
+  res.json({
+    status: 'ok',
     version: process.env.npm_package_version || '1.0.0',
     timestamp: new Date().toISOString()
   });
+});
+
+// Provide default project path from CLI
+app.get('/api/default-path', (req, res) => {
+  res.json({ defaultPath: process.env.DEFAULT_PROJECT_PATH || null });
 });
 
 // Server-Sent Events endpoint for live updates
