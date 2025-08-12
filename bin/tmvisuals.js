@@ -77,7 +77,7 @@ function startServer() {
       cwd: projectRoot,
       stdio: 'inherit',
       shell: true,
-      env: { ...process.env, PORT: port }
+      env: { ...process.env, PORT: port, DEFAULT_PROJECT_PATH: process.cwd() }
     });
     
     // Give the server a moment to start

@@ -664,7 +664,7 @@ const saveDynamicLayoutToStorage = (dynamic: boolean): void => {
 
 // Function to extract project name from git remote or folder path
 const extractProjectName = (projectPath: string | null): string => {
-  if (!projectPath) return 'TaskMaster Visualizer';
+  if (!projectPath) return 'untitled';
   
   try {
     // Extract from folder path first (most reliable)
@@ -680,7 +680,7 @@ const extractProjectName = (projectPath: string | null): string => {
     console.warn('Failed to extract project name:', error);
   }
   
-  return 'TaskMaster Visualizer';
+  return 'untitled';
 };
 
 // Enhanced edge routing algorithms with collision avoidance and smart path selection
