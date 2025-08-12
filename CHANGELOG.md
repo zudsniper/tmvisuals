@@ -2,6 +2,11 @@
 
 All notable changes to TaskMaster Visualizer will be documented in this file.
 
+## [2.2.2] - 2025-08-12
+
+### Changed
+- 🔗 **Single server port**: API and frontend now served from the same port for simpler `npx tmvisuals` usage
+
 ## [1.0.0] - 2025-05-28
 
 ### Added
