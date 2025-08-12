@@ -81,146 +81,12 @@ const INITIAL_BACKOFF_DELAY = 1000;
 // Maximum backoff delay in milliseconds
 const MAX_BACKOFF_DELAY = 30000;
 
-// Root route - show helpful message if someone visits the API directly
-// This MUST be defined before static middleware to take precedence
-app.get('/', (req, res) => {
-  const PORT_UI = process.env.PORT_UI || 5551;
-  res.send(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>⚠️ Wrong URL - This is the API Server</title>
-      <style>
-        body {
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          height: 100vh;
-          margin: 0;
-          background: #0d1117;
-          color: #c9d1d9;
-          overflow: hidden;
-        }
-        .container {
-          text-align: center;
-          padding: 3rem;
-          background: #161b22;
-          border-radius: 16px;
-          box-shadow: 0 8px 24px rgba(0,0,0,0.5);
-          border: 1px solid #30363d;
-          max-width: 600px;
-          animation: fadeIn 0.5s ease-out;
-        }
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(20px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        h1 { 
-          color: #f85149; 
-          margin-bottom: 1.5rem;
-          font-size: 3rem;
-          font-weight: 700;
-          text-shadow: 0 2px 4px rgba(248, 81, 73, 0.3);
-        }
-        .error-icon {
-          font-size: 5rem;
-          margin-bottom: 1rem;
-          animation: pulse 2s infinite;
-        }
-        @keyframes pulse {
-          0%, 100% { transform: scale(1); }
-          50% { transform: scale(1.1); }
-        }
-        p { 
-          color: #8b949e; 
-          margin: 1rem 0;
-          font-size: 1.1rem;
-          line-height: 1.6;
-        }
-        .highlight {
-          color: #58a6ff;
-          font-weight: 600;
-        }
-        a {
-          display: inline-block;
-          margin-top: 2rem;
-          padding: 1rem 3rem;
-          background: linear-gradient(135deg, #238636 0%, #2ea043 100%);
-          color: white;
-          text-decoration: none;
-          border-radius: 8px;
-          font-weight: 600;
-          font-size: 1.2rem;
-          transition: all 0.3s;
-          box-shadow: 0 4px 12px rgba(35, 134, 54, 0.3);
-        }
-        a:hover { 
-          transform: translateY(-2px);
-          box-shadow: 0 6px 20px rgba(35, 134, 54, 0.4);
-        }
-        code {
-          background: #0d1117;
-          padding: 0.3rem 0.6rem;
-          border-radius: 6px;
-          font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', monospace;
-          font-size: 1rem;
-          border: 1px solid #30363d;
-        }
-        .api-info {
-          margin-top: 3rem;
-          padding-top: 2rem;
-          border-top: 1px solid #30363d;
-          font-size: 0.9rem;
-          color: #6e7681;
-        }
-        .warning-box {
-          background: rgba(248, 81, 73, 0.1);
-          border: 2px solid #f85149;
-          border-radius: 8px;
-          padding: 1.5rem;
-          margin: 2rem 0;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="error-icon">🚫</div>
-        <h1>WRONG URL!</h1>
-        <div class="warning-box">
-          <p><strong>You're on the API server!</strong></p>
-          <p>This is <span class="highlight">NOT</span> where the TaskMaster Visualizer UI is located.</p>
-        </div>
-        <p>The API server is running on port <code>${PORT}</code></p>
-        <p>To access the TaskMaster Visualizer UI, please go to:</p>
-        <a href="http://localhost:${PORT_UI}">
-          🚀 Open TaskMaster Visualizer
-          <br>
-          <small style="font-size: 0.8rem; opacity: 0.8;">http://localhost:${PORT_UI}</small>
-        </a>
-        <div class="api-info">
-          <p>This server provides API endpoints for:</p>
-          <p>📁 File operations • 🔄 Live updates • 📊 Task management</p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `);
-});
-
 // Serve static files from the dist directory when built
 const distPath = path.join(__dirname, 'dist');
 const publicPath = path.join(__dirname, 'public');
 
 if (fs.existsSync(distPath)) {
-  // Use a custom static middleware that skips the root path
-  app.use((req, res, next) => {
-    if (req.path === '/') {
-      // Skip static serving for root path
-      return next();
-    }
-    express.static(distPath)(req, res, next);
-  });
+  app.use(express.static(distPath));
   console.log('✅ Serving built application from dist/');
 } else {
   console.warn('⚠️  No dist/ directory found. Run "npm run build" first.');
@@ -1072,10 +938,8 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`\n🚀 TaskMaster Visualizer API Server`);
-  console.log(`📡 API running on: http://localhost:${PORT}`);
+  console.log(`\n🚀 TaskMaster Visualizer Server`);
+  console.log(`🌐 App and API running on: http://localhost:${PORT}`);
   console.log(`⚡ Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`📁 Serving from: ${distPath}`);
-  console.log(`\n⚠️  This is the API server. To view the app:`);
-  console.log(`🔗 Open http://localhost:5551 in your browser (Vite dev server)\n`);
 });
