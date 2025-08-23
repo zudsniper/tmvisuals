@@ -2,10 +2,9 @@ import { create } from 'zustand';
 import React from 'react';
 import { Task, TaskNode, TaskEdge } from '../types/task';
 import { Viewport } from 'reactflow';
-import { ForceDirectedLayout, DEFAULT_FORCE_CONFIG, ForceLayoutConfig } from '../utils/forceLayout';
 import { ViewportManager, CameraController, TaskStatusManager } from '../utils/viewportManager';
 
-export type LayoutMode = 'grid' | 'graph' | 'force';
+export type LayoutMode = 'grid' | 'graph';
 export type ThemeMode = 'light' | 'dark' | 'system';
 
 interface TaskStore {
@@ -36,10 +35,6 @@ interface TaskStore {
   focusOnActiveTask: boolean; // New setting to focus on active task instead of remembering viewport
   dynamicLayout: boolean; // New setting for dynamic layout based on active task changes
   currentActiveTaskId: number | null; // Track current active task for dynamic layout
-  
-  // Force-directed layout system
-  forceLayout: ForceDirectedLayout | null;
-  isSimulationRunning: boolean;
   
   // Viewport management system
   viewportManager: ViewportManager;
@@ -85,12 +80,6 @@ interface TaskStore {
   setProjectName: (name: string | null) => void;
   setFocusOnActiveTask: (focus: boolean) => void;
   setDynamicLayout: (dynamic: boolean) => void;
-  
-  // Force layout actions
-  initializeForceLayout: () => void;
-  updateForceLayout: (config?: Partial<ForceLayoutConfig>) => void;
-  startForceSimulation: () => void;
-  stopForceSimulation: () => void;
   setActiveTaskFocus: (taskId: number | null) => void;
   
   // Live update actions
@@ -381,52 +370,19 @@ function calculateGraphLayout(tasks: Task[], customPositions: Map<string, { x: n
   return nodes;
 }
 
-// Force-directed graph layout using physics simulation
-function calculateForceDirectedLayout(tasks: Task[], customPositions: Map<string, { x: number; y: number }>, forceLayout: ForceDirectedLayout | null, activeTaskId: number | null = null): TaskNode[] {
-  const nodes: TaskNode[] = [];
-  
-  // If force layout is not initialized or no tasks, fall back to static layout
-  if (!forceLayout || tasks.length === 0) {
-    return calculateGraphLayout(tasks, customPositions, false, activeTaskId);
-  }
-  
-  // Use positions from force simulation or fall back to custom positions
-  tasks.forEach(task => {
-    const nodeId = `task-${task.id}`;
-    
-    // Try to get position from custom positions (updated by force simulation)
-    const position = customPositions.get(nodeId) || { 
-      x: Math.random() * 800 + 200, // Random initial position if no data
-      y: Math.random() * 600 + 150 
-    };
-    
-    nodes.push({
-      id: nodeId,
-      type: 'task',
-      position,
-      data: { task, isCollapsed: false }
-    });
-  });
-  
-  return nodes;
-}
-
 // Calculate positions based on layout mode
-function calculateNodePositions(tasks: Task[], layoutMode: LayoutMode, customPositions: Map<string, { x: number; y: number }>, dynamicLayout?: boolean, activeTaskId?: number | null): TaskNode[];
-function calculateNodePositions(tasks: Task[], layoutMode: LayoutMode, customPositions: Map<string, { x: number; y: number }>, dynamicLayout: boolean, activeTaskId: number | null, forceLayout: ForceDirectedLayout | null): TaskNode[];
-function calculateNodePositions(tasks: Task[], layoutMode: LayoutMode, customPositions: Map<string, { x: number; y: number }>, dynamicLayout: boolean = false, activeTaskId: number | null = null, forceLayout?: ForceDirectedLayout | null): TaskNode[] {
-  // If force layout is provided and layout mode is graph, use force-directed layout
-  if (forceLayout && layoutMode === 'graph') {
-    return calculateForceDirectedLayout(tasks, customPositions, forceLayout, activeTaskId);
-  }
-  
+function calculateNodePositions(
+  tasks: Task[],
+  layoutMode: LayoutMode,
+  customPositions: Map<string, { x: number; y: number }>,
+  dynamicLayout: boolean = false,
+  activeTaskId: number | null = null
+): TaskNode[] {
   switch (layoutMode) {
     case 'grid':
       return calculateGridLayout(tasks, customPositions);
     case 'graph':
       return calculateGraphLayout(tasks, customPositions, dynamicLayout, activeTaskId);
-    case 'force':
-      return calculateForceDirectedLayout(tasks, customPositions, forceLayout || null, activeTaskId);
     default:
       return calculateGridLayout(tasks, customPositions);
   }
@@ -768,8 +724,8 @@ function bundleEdges(edges: { source: string; target: string; data: any }[]):
 // function calculateSmartRoute would go here when we implement advanced pathfinding
 
 function createEdges(tasks: Task[], layoutMode: LayoutMode): TaskEdge[] {
-  if (layoutMode !== 'graph' && layoutMode !== 'force') {
-    return []; // No edges in grid mode, but show edges in both graph and force modes
+  if (layoutMode !== 'graph') {
+    return []; // No edges in grid mode
   }
   
   const edges: TaskEdge[] = [];
@@ -935,10 +891,6 @@ export const useTaskStore = create<TaskStore>((set, get) => {
     dynamicLayout: loadDynamicLayoutFromStorage(), // Load from storage instead of defaulting to false
     currentActiveTaskId: null,
     
-    // Force-directed layout system
-    forceLayout: null,
-    isSimulationRunning: false,
-    
     // Viewport management system
     viewportManager: new ViewportManager(),
     cameraController: new CameraController(),
@@ -974,7 +926,7 @@ export const useTaskStore = create<TaskStore>((set, get) => {
         return;
       }
       
-      const { layoutMode, customPositions, dynamicLayout, forceLayout } = get();
+  const { layoutMode, customPositions, dynamicLayout } = get();
       
       // Track active task for dynamic layout
       const activeTask = tasks.find(t => 
@@ -982,7 +934,7 @@ export const useTaskStore = create<TaskStore>((set, get) => {
       );
       const activeTaskId = activeTask?.id || null;
       
-      const nodes = calculateNodePositions(tasks, layoutMode, customPositions, dynamicLayout, activeTaskId, forceLayout);
+  const nodes = calculateNodePositions(tasks, layoutMode, customPositions, dynamicLayout, activeTaskId);
       const edges = createEdges(tasks, layoutMode);
       console.log('Generated nodes:', nodes.length);
       console.log('Generated edges:', edges.length);
@@ -1044,7 +996,7 @@ export const useTaskStore = create<TaskStore>((set, get) => {
         const currentTag = isNewResponseShape ? (tasksData.currentTag || 'master') : 'master';
         const availableTags = isNewResponseShape ? (tasksData.availableTags || ['master']) : ['master'];
         
-        const { layoutMode, customPositions, dynamicLayout, forceLayout } = get();
+  const { layoutMode, customPositions, dynamicLayout } = get();
         
         // Track active task for dynamic layout
         const activeTask = tasks.find(t => 
@@ -1052,7 +1004,7 @@ export const useTaskStore = create<TaskStore>((set, get) => {
         );
         const activeTaskId = activeTask?.id || null;
         
-        const nodes = calculateNodePositions(tasks, layoutMode, customPositions, dynamicLayout, activeTaskId, forceLayout);
+  const nodes = calculateNodePositions(tasks, layoutMode, customPositions, dynamicLayout, activeTaskId);
         const edges = createEdges(tasks, layoutMode);
         
         // Extract project name if not already set
@@ -1131,57 +1083,9 @@ export const useTaskStore = create<TaskStore>((set, get) => {
     
     setLayoutMode: (mode) => {
       const state = get();
-      const { tasks, customPositions, dynamicLayout, currentActiveTaskId, forceLayout } = state;
+  const { tasks, customPositions, dynamicLayout, currentActiveTaskId } = state;
       
-      // Initialize force layout if switching to force mode and not already initialized
-      if (mode === 'force' && !forceLayout) {
-        // First initialize the force layout
-        const config: ForceLayoutConfig = {
-          ...DEFAULT_FORCE_CONFIG,
-          width: typeof window !== 'undefined' ? window.innerWidth : 1200,
-          height: typeof window !== 'undefined' ? window.innerHeight : 800,
-          activeTaskId: currentActiveTaskId,
-        };
-        
-        const newForceLayout = new ForceDirectedLayout(config);
-        
-        // Set up simulation event handlers
-        newForceLayout.onTickUpdate((nodes) => {
-          const { customPositions, tasks, layoutMode } = get();
-          const newPositions = new Map(customPositions);
-          
-          nodes.forEach(node => {
-            if (node.x !== undefined && node.y !== undefined) {
-              newPositions.set(node.id, { x: node.x, y: node.y });
-            }
-          });
-          
-          // Update positions and recalculate nodes if we're in force mode
-          if (layoutMode === 'force') {
-            const updatedNodes = calculateNodePositions(tasks, 'force', newPositions, dynamicLayout, currentActiveTaskId, newForceLayout);
-            set({ customPositions: newPositions, nodes: updatedNodes });
-          } else {
-            set({ customPositions: newPositions });
-          }
-        });
-        
-        newForceLayout.onSimulationEnd(() => {
-          set({ isSimulationRunning: false });
-        });
-        
-        // Set the new force layout and start simulation
-        set({ forceLayout: newForceLayout });
-        
-        // Optimize for large datasets
-        newForceLayout.optimizeForLargeDataset(tasks.length);
-        
-        // Start the simulation
-        newForceLayout.setData(tasks, customPositions);
-        newForceLayout.start();
-        set({ isSimulationRunning: true });
-      }
-      
-      const nodes = calculateNodePositions(tasks, mode, customPositions, dynamicLayout, currentActiveTaskId, mode === 'force' ? (forceLayout || get().forceLayout) : forceLayout);
+  const nodes = calculateNodePositions(tasks, mode, customPositions, dynamicLayout, currentActiveTaskId);
       const edges = createEdges(tasks, mode);
       set({ layoutMode: mode, nodes, edges });
     },
@@ -1207,8 +1111,8 @@ export const useTaskStore = create<TaskStore>((set, get) => {
           : node
       );
       
-      if (state.dynamicLayout && (state.layoutMode === 'graph' || state.layoutMode === 'force') && activeTaskChanged) {
-        updatedNodes = calculateNodePositions(updatedTasks, state.layoutMode, state.customPositions, true, newActiveTaskId, state.forceLayout);
+      if (state.dynamicLayout && state.layoutMode === 'graph' && activeTaskChanged) {
+        updatedNodes = calculateNodePositions(updatedTasks, state.layoutMode, state.customPositions, true, newActiveTaskId);
       }
       
       return {
@@ -1333,103 +1237,20 @@ export const useTaskStore = create<TaskStore>((set, get) => {
       saveDynamicLayoutToStorage(dynamic); // Persist the setting
       
       // If enabling dynamic layout, recalculate layout with current active task
-      if (dynamic && (state.layoutMode === 'graph' || state.layoutMode === 'force')) {
+      if (dynamic && state.layoutMode === 'graph') {
         const activeTask = state.tasks.find(t => 
           t.status === 'in-progress' || t.subtasks.some(st => st.status === 'in-progress')
         );
         const activeTaskId = activeTask?.id || null;
         
-        const nodes = calculateNodePositions(state.tasks, state.layoutMode, state.customPositions, dynamic, activeTaskId, state.forceLayout);
+        const nodes = calculateNodePositions(state.tasks, state.layoutMode, state.customPositions, dynamic, activeTaskId);
         const edges = createEdges(state.tasks, state.layoutMode);
         set({ nodes, edges, currentActiveTaskId: activeTaskId });
       }
     },
     
-    // Force layout actions
-    initializeForceLayout: () => {
-      const { tasks } = get();
-      if (tasks.length === 0) return;
-      
-      const config: ForceLayoutConfig = {
-        ...DEFAULT_FORCE_CONFIG,
-        width: typeof window !== 'undefined' ? window.innerWidth : 1200,
-        height: typeof window !== 'undefined' ? window.innerHeight : 800,
-      };
-      
-      const forceLayout = new ForceDirectedLayout(config);
-      
-      // Set up simulation event handlers
-      forceLayout.onTickUpdate((nodes) => {
-        const { customPositions, tasks, layoutMode, dynamicLayout, currentActiveTaskId } = get();
-        const newPositions = new Map(customPositions);
-        
-        nodes.forEach(node => {
-          if (node.x !== undefined && node.y !== undefined) {
-            newPositions.set(node.id, { x: node.x, y: node.y });
-          }
-        });
-        
-        // Update positions and recalculate nodes if we're in force mode
-        if (layoutMode === 'force') {
-          const updatedNodes = calculateNodePositions(tasks, 'force', newPositions, dynamicLayout, currentActiveTaskId, forceLayout);
-          set({ customPositions: newPositions, nodes: updatedNodes });
-        } else {
-          set({ customPositions: newPositions });
-        }
-      });
-      
-      forceLayout.onSimulationEnd(() => {
-        set({ isSimulationRunning: false });
-      });
-      
-      set({ forceLayout, isSimulationRunning: false });
-      
-      // Optimize for large datasets
-      forceLayout.optimizeForLargeDataset(tasks.length);
-    },
-    
-    updateForceLayout: (config) => {
-      const { forceLayout } = get();
-      if (!forceLayout) return;
-      
-      if (config) {
-        // Use smooth transition for significant layout changes
-        const significantChanges = config.linkDistance || config.chargeStrength || config.collisionRadius;
-        
-        if (significantChanges) {
-          // Use the new smooth transition method for layout parameter changes
-          forceLayout.transitionToNewLayout(config, 500);
-        } else {
-          // Direct update for minor changes
-          forceLayout.updateConfig(config);
-        }
-      }
-    },
-    
-    startForceSimulation: () => {
-      const { forceLayout, tasks, customPositions } = get();
-      if (!forceLayout || tasks.length === 0) return;
-      
-      // Set data in the force layout
-      forceLayout.setData(tasks, customPositions);
-      forceLayout.start();
-      set({ isSimulationRunning: true });
-    },
-    
-    stopForceSimulation: () => {
-      const { forceLayout } = get();
-      if (!forceLayout) return;
-      
-      forceLayout.stop();
-      set({ isSimulationRunning: false });
-    },
-    
     setActiveTaskFocus: (taskId) => {
-      const { forceLayout } = get();
-      if (!forceLayout) return;
-      
-      const config = { activeTaskId: taskId };
-      forceLayout.updateConfig(config);
+      // With force mode removed, just update the active task ID for UI logic
       set({ currentActiveTaskId: taskId });
     },
     
@@ -1454,7 +1275,7 @@ export const useTaskStore = create<TaskStore>((set, get) => {
             
             if (data.type === 'tasks-updated') {
               console.log('Tasks updated, refreshing...');
-              const { layoutMode, customPositions, dynamicLayout, forceLayout } = get();
+              const { layoutMode, customPositions, dynamicLayout } = get();
               
               // Handle both new response shape (with mode) and legacy response (tasks only) for SSE updates
               const isNewResponseShape = data.data && 'mode' in data.data;
@@ -1487,7 +1308,7 @@ export const useTaskStore = create<TaskStore>((set, get) => {
               );
               const activeTaskId = activeTask?.id || null;
               
-              const nodes = calculateNodePositions(tasks, layoutMode, customPositions, dynamicLayout, activeTaskId, forceLayout);
+              const nodes = calculateNodePositions(tasks, layoutMode, customPositions, dynamicLayout, activeTaskId);
               const edges = createEdges(tasks, layoutMode);
               
               set({ 
@@ -1784,7 +1605,7 @@ export const useTaskStore = create<TaskStore>((set, get) => {
     },
     
     duplicateTask: (taskId) => {
-      const { tasks, customPositions, layoutMode, dynamicLayout, currentActiveTaskId, forceLayout } = get();
+  const { tasks, customPositions, layoutMode, dynamicLayout, currentActiveTaskId } = get();
       const taskToDuplicate = tasks.find(t => t.id === taskId);
       if (!taskToDuplicate) return;
       
@@ -1799,14 +1620,14 @@ export const useTaskStore = create<TaskStore>((set, get) => {
       };
       
       const updatedTasks = [...tasks, newTask];
-      const nodes = calculateNodePositions(updatedTasks, layoutMode, customPositions, dynamicLayout, currentActiveTaskId, forceLayout);
+  const nodes = calculateNodePositions(updatedTasks, layoutMode, customPositions, dynamicLayout, currentActiveTaskId);
       const edges = createEdges(updatedTasks, layoutMode);
       
       set({ tasks: updatedTasks, nodes, edges });
     },
     
     deleteTask: (taskId) => {
-      const { tasks, customPositions, layoutMode, dynamicLayout, currentActiveTaskId, forceLayout } = get();
+  const { tasks, customPositions, layoutMode, dynamicLayout, currentActiveTaskId } = get();
       const updatedTasks = tasks.filter(t => t.id !== taskId);
       
       // Remove any dependencies on the deleted task
@@ -1819,7 +1640,7 @@ export const useTaskStore = create<TaskStore>((set, get) => {
       const newCustomPositions = new Map(customPositions);
       newCustomPositions.delete(`task-${taskId}`);
       
-      const nodes = calculateNodePositions(cleanedTasks, layoutMode, newCustomPositions, dynamicLayout, currentActiveTaskId, forceLayout);
+  const nodes = calculateNodePositions(cleanedTasks, layoutMode, newCustomPositions, dynamicLayout, currentActiveTaskId);
       const edges = createEdges(cleanedTasks, layoutMode);
       
       set({ tasks: cleanedTasks, nodes, edges, customPositions: newCustomPositions });
@@ -1831,9 +1652,9 @@ export const useTaskStore = create<TaskStore>((set, get) => {
     },
     
     resetLayout: () => {
-      const { tasks, layoutMode, dynamicLayout, currentActiveTaskId, forceLayout } = get();
+  const { tasks, layoutMode, dynamicLayout, currentActiveTaskId } = get();
       const newCustomPositions = new Map();
-      const nodes = calculateNodePositions(tasks, layoutMode, newCustomPositions, dynamicLayout, currentActiveTaskId, forceLayout);
+  const nodes = calculateNodePositions(tasks, layoutMode, newCustomPositions, dynamicLayout, currentActiveTaskId);
       const edges = createEdges(tasks, layoutMode);
       
       set({ customPositions: newCustomPositions, nodes, edges });

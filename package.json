@@ -4,6 +4,7 @@
   "version": "2.2.2",
   "type": "module",
   "description": "Interactive mind map visualization for Claude Task Master tasks with hierarchical dependencies, status tracking, and editor integration.",
+  "taskmasterCompatibility": "0.25.1",
   "keywords": [
     "task-management",
     "visualization",

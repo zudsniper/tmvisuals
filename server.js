@@ -107,9 +107,17 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Provide default project path from CLI
+// Provide default project path and compatibility info
 app.get('/api/default-path', (req, res) => {
-  res.json({ defaultPath: process.env.DEFAULT_PROJECT_PATH || null });
+  let compatibility = null;
+  try {
+    const pkgPath = path.join(__dirname, 'package.json');
+    if (fs.existsSync(pkgPath)) {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+      compatibility = pkg.taskmasterCompatibility || null;
+    }
+  } catch {}
+  res.json({ defaultPath: process.env.DEFAULT_PROJECT_PATH || null, compatibility });
 });
 
 // Server-Sent Events endpoint for live updates
@@ -152,7 +160,7 @@ app.post('/api/watch-project', async (req, res) => {
     }
     
     // Validate and sanitize paths
-    let { tasksDir, mode } = resolveTaskmasterPaths(projectPath);
+  let { tasksDir, mode } = resolveTaskmasterPaths(projectPath);
     let safeProjectPath = path.resolve(projectPath);
 
     // Validate project path
@@ -178,9 +186,14 @@ app.post('/api/watch-project', async (req, res) => {
 
     // Watch the resolved tasks directory
     let directoriesToWatch = [tasksDir];
+    // If unknown mode, attempt to watch both potential locations
     if (mode === 'legacy') {
-      // Also watch legacy directory for backward compatibility
-      directoriesToWatch.push(path.join(safeProjectPath, 'tasks'));
+      // already legacy path in tasksDir
+    } else if (mode === 'unknown') {
+      directoriesToWatch = [
+        path.join(safeProjectPath, '.taskmaster', 'tasks'),
+        path.join(safeProjectPath, 'tasks')
+      ];
     }
 
     const existingDirs = directoriesToWatch.filter(dir => fs.existsSync(dir));
@@ -936,8 +949,8 @@ app.get('*', (req, res) => {
     res.sendFile(indexPath);
   } else {
     res.status(500).json({ 
-      error: 'Application not built. Please run "npm run build" first.',
-      hint: 'If you installed via npx, this should have been done automatically.'
+  error: 'Application not built. Please build the UI first.',
+  hint: 'Run "pnpm build" (or "npm run build") to generate dist/. If using npx tmvisuals, the build should happen automatically in dev.'
     });
   }
 });

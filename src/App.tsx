@@ -47,9 +47,7 @@ function Flow() {
     isLoading,
     error,
     clearError,
-    // New API response properties
-    config,
-    report,
+  // New API response properties (kept minimal in UI)
     currentTag,
     // New dark mode and position features
     theme,
@@ -90,6 +88,10 @@ function Flow() {
   const [isEditingProjectName, setIsEditingProjectName] = useState(false);
   const [editingProjectName, setEditingProjectName] = useState('');
   const [defaultPathChecked, setDefaultPathChecked] = useState(false);
+  const [compatVersion, setCompatVersion] = useState<string | null>(null);
+  // Progressive rendering for large graphs
+  const RENDER_BATCH = 400;
+  const [renderCount, setRenderCount] = useState<number>(RENDER_BATCH);
 
   // One-time cleanup of problematic localStorage data
   useEffect(() => {
@@ -124,6 +126,9 @@ function Flow() {
         const data = await res.json();
         if (data.defaultPath) {
           setProjectPath(data.defaultPath);
+        }
+        if (data.compatibility) {
+          setCompatVersion(data.compatibility);
         }
       } catch (err) {
         console.error('Failed to fetch default path', err);
@@ -283,6 +288,35 @@ function Flow() {
     setEdges(edges);
   }, [nodes, edges, setNodes, setEdges, layoutMode]);
 
+  // Ramp up render count gradually to avoid initial jank on huge projects
+  useEffect(() => {
+    // If searching, show all immediately for accuracy
+    if (searchQuery) {
+      setRenderCount(nodes.length);
+      return;
+    }
+    // Reset and ramp when dataset changes
+    let rafId: number | null = null;
+    let cancelled = false;
+    setRenderCount(Math.min(RENDER_BATCH, nodes.length));
+
+    const step = () => {
+      if (cancelled) return;
+      setRenderCount(prev => {
+        if (prev >= nodes.length) return prev;
+        const next = Math.min(prev + RENDER_BATCH, nodes.length);
+        return next;
+      });
+      rafId = requestAnimationFrame(step);
+    };
+
+    rafId = requestAnimationFrame(step);
+    return () => {
+      cancelled = true;
+      if (rafId) cancelAnimationFrame(rafId);
+    };
+  }, [nodes.length, searchQuery]);
+
   // Handle node position changes to persist custom positions
   const handleNodesChange = useCallback((changes: any[]) => {
     onNodesChange(changes);
@@ -398,6 +432,12 @@ function Flow() {
     }
   }, [projectPath, loadTasksFromPath]);
 
+  // Performance: softly cap initial render size; show more on search
+  const MAX_VISIBLE = renderCount; // dynamic cap based on progressive batching
+  const visibleNodes = flowNodes.slice(0, Math.min(MAX_VISIBLE, flowNodes.length));
+  const visibleNodeIds = new Set(visibleNodes.map(n => n.id));
+  const visibleEdges = flowEdges.filter(e => visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target));
+
   return (
     <div className={`h-full w-full relative ${isDarkMode ? 'dark bg-gray-900' : 'bg-white'}`}>
       {/* Loading overlay */}
@@ -473,8 +513,8 @@ function Flow() {
       )}
 
       <ReactFlow
-        nodes={flowNodes}
-        edges={flowEdges}        
+        nodes={visibleNodes}
+        edges={visibleEdges}        
         onNodesChange={handleNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
@@ -502,13 +542,16 @@ function Flow() {
           color={isDarkMode ? '#374151' : '#e5e7eb'}
         />
         <Controls />
-        <MiniMap 
-          style={{
-            backgroundColor: isDarkMode ? '#1f2937' : '#f9fafb',
-            border: `1px solid ${isDarkMode ? '#374151' : '#d1d5db'}`
-          }}
-          maskColor={isDarkMode ? '#111827' : '#f3f4f6'}
-        />
+        {/* Hide MiniMap on extremely large graphs for perf, unless searching */}
+        {(flowNodes.length <= 2000 || !!searchQuery) && (
+          <MiniMap 
+            style={{
+              backgroundColor: isDarkMode ? '#1f2937' : '#f9fafb',
+              border: `1px solid ${isDarkMode ? '#374151' : '#d1d5db'}`
+            }}
+            maskColor={isDarkMode ? '#111827' : '#f3f4f6'}
+          />
+        )}
       </ReactFlow>
 
       {/* Context Menu */}
@@ -615,7 +658,7 @@ function Flow() {
             </div>
           </div>
           
-          {/* Center - Project Info */}
+          {/* Center - Project Info (clean, minimal) */}
           <div className="flex-1 max-w-md mx-4">
             {isEditingProjectName ? (
               <div className="flex items-center gap-2 justify-center">
@@ -653,60 +696,25 @@ function Flow() {
                 </button>
               </div>
             )}
-            {projectPath ? (
-              <div className={`text-xs text-center ${
-                isDarkMode ? 'text-gray-400' : 'text-gray-500'
-              }`}>
-                {projectPath}
-              </div>
-            ) : (
-              <div className={`text-xs text-center ${
-                isDarkMode ? 'text-gray-400' : 'text-gray-500'
-              }`}>
-                <button 
-                  onClick={() => setShowFileBrowser(true)}
-                  className="hover:underline"
-                >
-                  Click to open a project folder
+            {/* Path or prompt */}
+            <div className={`text-xs text-center ${
+              isDarkMode ? 'text-gray-400' : 'text-gray-500'
+            }`}>
+              {projectPath ? (
+                <span className="truncate inline-block max-w-full" title={projectPath}>{projectPath}</span>
+              ) : (
+                <button onClick={() => setShowFileBrowser(true)} className="hover:underline">
+                  Select a project folder
                 </button>
-              </div>
-            )}
-            {/* Display current tag */}
+              )}
+            </div>
+            {/* Current tag badge (keep minimal in header) */}
             {currentTag && (
-              <div className="flex justify-center mt-1">
-                <span
-                  className={`text-xs px-2 py-1 rounded-full ${
-                    isDarkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-700'
-                  }`}
-                >
-                  {currentTag}
-                </span>
+              <div className="flex justify-center gap-2 mt-1">
+                <span className={`text-xs px-2 py-0.5 rounded-full ${isDarkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-700'}`}>{currentTag}</span>
               </div>
             )}
-            {/* Display models with tooltip */}
-            {config && config.modelNames && Array.isArray(config.modelNames) && (
-              <div className="flex justify-center mt-1">
-                <span
-                  className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}
-                  title={config.modelNames.join(', ')}
-                >
-                  Models: {config.modelNames[0]}
-                  {config.modelNames.length > 1 && '...'}
-                </span>
-              </div>
-            )}
-            {report?.link && (
-              <div className="flex justify-center mt-1">
-                <a 
-                  href={report.link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={`px-2 py-1 text-xs rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors`} 
-                >
-                  View Complexity Report
-                </a>
-              </div>
-            )}
+            {/* Minimal extras: hide verbose model/report info from header */}
             {/* End of New Info */}
             
             {/* Live Update Indicator */}
@@ -738,8 +746,13 @@ function Flow() {
             )}
           </div>
           
-          {/* Right side - Search */}
-          <div className="w-64">
+          {/* Right side - Search and counters */}
+          <div className="w-64 flex items-center gap-2 justify-end">
+            {(visibleNodes.length < flowNodes.length) && (
+              <span className={`text-[11px] px-2 py-0.5 rounded ${isDarkMode ? 'bg-yellow-900 text-yellow-200' : 'bg-yellow-50 text-yellow-700'}`}>
+                Showing {visibleNodes.length.toLocaleString()} of {flowNodes.length.toLocaleString()} nodes
+              </span>
+            )}
             <SearchBar onSearch={setSearchQuery} />
           </div>
         </div>
@@ -761,6 +774,15 @@ function Flow() {
           clearError();
         }}
       />
+
+      {/* Bottom-right minimal compatibility badge */}
+      {compatVersion && (
+        <div className={`absolute bottom-3 right-3 z-20 text-[11px] px-2 py-1 rounded-full border ${
+          isDarkMode ? 'bg-gray-800/80 text-blue-200 border-gray-700' : 'bg-white/90 text-blue-700 border-gray-200'
+        }`} title="TaskMaster compatibility">
+          TM {compatVersion}
+        </div>
+      )}
     </div>
   );
 }
