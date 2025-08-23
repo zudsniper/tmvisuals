@@ -2,6 +2,21 @@
 
 All notable changes to TaskMaster Visualizer will be documented in this file.
 
+## [2.3.0] - 2025-08-23
+
+### Added
+- Compatibility badge showing TaskMaster version from `package.json.taskmasterCompatibility` (bottom-right of UI)
+- Progressive node batching and conditional MiniMap for large projects to improve responsiveness
+
+### Changed
+- CLI now assumes the current working directory as the project when run via `npx tmvisuals` (positional path optional)
+- Build prefers `pnpm` (falls back to `npm`) when the CLI needs to build
+- Simplified header UI; removed verbose model/report text in favor of minimal indicators
+- Cleaned modes to just `grid` and `graph`; removed leftover force-mode references
+
+### Fixed
+- Argument parsing so `--port/-p` values are not treated as project paths
+
 ## [2.2.2] - 2025-08-12
 
 ### Changed
